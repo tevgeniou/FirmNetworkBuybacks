@@ -1,0 +1,1486 @@
+
+<< eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+#  Copyright 2016, INSEAD
+#  by T. Evgeniou, Theo Vermaelen, and Ling Yue
+#  Dual licensed under the MIT or GPL Version 2 licenses.
+
+#dev.off();
+#library(knitr); knit2pdf('manuscriptBBnetworks.Rnw', texi2dvi='texi2dvi'); file.remove(paste("manuscriptBBnetworks",c(".aux",".tex",".blg",".bbl",".log",".out"),sep=""))
+#dir.create("tmpfiles") # need to comment this if the directory already exists
+# Then to make it into Word: 
+# system("pandoc -s manuscriptBBnetworks.tex --bibliography=bibliography.bib --number-sections --reference-links -o theoling.docx")
+
+rm(list=ls()) # Clean up the memory, if we want to rerun from scratch
+
+generate_all_data = 0 # set this to 1 if the data need to be re-generated from scratch
+generate_rnw_data = 0 # set this to 1 to generate the .Rnw data
+
+if (generate_all_data == 1){
+  source("create_network_data.R")
+}
+if (generate_rnw_data == 1){
+  source("bb_network.R")
+} else {
+  load("bb_network.Rdata")
+}
+
+source("../Financelibraries/lib_helpers.R", chdir=TRUE)
+source("../Financelibraries/latex_code.R")
+source("../FinanceData/rawdata_fama_french/ff_industries_sic.R")
+source("Paper_global_parameters.R")
+
+firstyear = as.character(format(min(BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date),"%Y"))
+lastyear = as.character(format(max(BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date),"%Y"))
+
+
+if (0){ # To add later
+  qfactors <- read.csv("../FinanceData/rawdata_fama_french/qfactors.csv", sep=";", dec=".")
+  rownames(qfactors) <- paste(qfactors[,1],ifelse(str_length(qfactors[,2]) == 2, qfactors[,2], paste("0",qfactors[,2], sep="")), sep="-")
+  useonly = which(rownames(qfactors) %in% str_sub(rownames(Risk_Factors_Monthly), start = 1, end=7))
+  qfactors = qfactors[useonly,]
+  rownames(qfactors) <- rownames(Risk_Factors_Monthly)[match(rownames(qfactors), str_sub(rownames(Risk_Factors_Monthly), start = 1, end=7))]
+  qfactors = qfactors[,3:6]
+  qfactors = apply(qfactors,2,function(r) as.numeric(str_replace(r,",",".")))
+  qfactors = qfactors/100
+  qfactors = cbind(qfactors,Risk_Factors_Monthly[,c("SMB", "HMl","RF","RMW","CMA")])
+  formula_used="(ri - RF) ~ MKT + HMl + ME + I.A + ROE"
+  qfactors_irats_MKT_HMl_ME_IA_ROE = car_table(BUYBACK_DATA_NETWORK$DATASET$returns_by_event_monthly, BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date, qfactors, formula_used = formula_used)$results
+  qfactors_irats_MKT_HMl_ME_IA_ROE = qfactors_irats_MKT_HMl_ME_IA_ROE[reported_times,]
+  
+}
+
+
+inline_hook <- function (x) {
+  if (is.numeric(x)) {
+    # ifelse does a vectorized comparison
+    # If integer, print without decimal; otherwise print two places
+    res <- ifelse(x == round(x),
+                  # use comma for 1000s
+                  sprintf("%s", prettyNum(x, big.mark=",")),
+                  sprintf("%.2f", x)
+    )
+    paste(res, collapse = ", ")
+  } else {
+    x
+  }
+}
+knit_hooks$set(inline = inline_hook)
+
+@
+%<<  Data loading, eval = TRUE,
+\documentclass[12pt]{article}
+
+% DEFAULT PACKAGE SETUP
+\usepackage{setspace,graphicx,epstopdf,amsmath,amsfonts,amssymb,amsthm,versionPO}
+\usepackage{marginnote,datetime,enumitem,subfigure,rotating,fancyvrb,graphics,siunitx}
+\usepackage{capt-of,pdflscape}
+\usepackage{hyperref,float}
+\usepackage[longnamesfirst]{natbib}
+\usepackage{booktabs}% http://ctan.org/pkg/booktabs
+
+\usdate
+
+%\usepackage[dvipsnames]{xcolor} % Refer to colors by name
+%\usepackage[colorlinks=true,urlcolor=blue,linkcolor=Green,citecolor=RedViolet]{hyperref}           
+%\usepackage{xcolor}
+%\usepackage{colortbl}
+%\usepackage{changepage}
+%\usepackage{adjustbox}
+%\usepackage{multirow}
+%\usepackage{longtable}
+
+% These next lines allow including or excluding different versions of text
+% using versionPO.sty
+
+\excludeversion{notes}  	% Include notes?
+\includeversion{links}          % Turn hyperlinks on?
+
+% Turn off hyperlinking if links is excluded
+\iflinks{}{\hypersetup{draft=true}}
+
+\usepackage[margin=1in,top=1.5in,bottom=1.5in]{geometry}%
+\usepackage[disable]{todonotes}%
+%\linespread{1.3}
+\onehalfspacing      % Use 1.5 spacing
+
+% Allow todonotes inside footnotes without blowing up LaTeX
+% Next command works but now notes can overlap. Instead, we'll define 
+% a special footnote note command that performs this redefinition.
+%\renewcommand{\marginpar}{\marginnote}%
+
+% Save original definition of \marginpar
+\let\oldmarginpar\marginpar
+
+% Workaround for todonotes problem with natbib (To Do list title comes out wrong)
+\makeatletter\let\chapter\@undefined\makeatother % Undefine \chapter for todonotes
+
+% Define note commands
+\newcommand{\smalltodo}[2][] {\todo[caption={#2}, size=\scriptsize, fancyline, #1] {\begin{spacing}{.5}#2\end{spacing}}}
+\newcommand{\rhs}[2][]{\smalltodo[color=green!30,#1]{{\bf RS:} #2}}
+\newcommand{\rhsnolist}[2][]{\smalltodo[nolist,color=green!30,#1]{{\bf RS:} #2}}
+\newcommand{\rhsfn}[2][]{%  To be used in footnotes (and in floats)
+\renewcommand{\marginpar}{\marginnote}%
+\smalltodo[color=green!30,#1]{{\bf RS:} #2}%
+\renewcommand{\marginpar}{\oldmarginpar}}
+%\newcommand{\textnote}[1]{\ifnotes{{\noindent\color{red}#1}}{}}
+\newcommand{\textnote}[1]{\ifnotes{{\colorbox{yellow}{{\color{red}#1}}}}{}}
+
+% Command to start a new page, starting on odd-numbered page if twoside option 
+% is selected above
+\newcommand{\clearRHS}{\clearpage\thispagestyle{empty}\cleardoublepage\thispagestyle{plain}}
+
+% Number paragraphs and subparagraphs and include them in TOC
+\setcounter{tocdepth}{2}
+
+% JF-specific includes:
+\usepackage{indentfirst} % Indent first sentence of a new section.
+\usepackage{endnotes}    % Use endnotes instead of footnotes
+\usepackage{jf}          % JF-specific formatting of sections, etc.
+\usepackage[labelfont=bf,labelsep=period,justification=centering]{caption}   % Format figure captions
+\captionsetup[table]{labelsep=newline,labelfont=bf,textfont=bf}
+\captionsetup[figure]{labelfont=bf,justification=justified}
+\pagestyle{myheadings}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{assumption}{Assumption}[section]
+\newtheorem{proposition}{Proposition}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{corollary}{Corollary}
+\newtheorem{condition}{Condition}
+
+\begin{document}
+
+%%Blind title page
+%\begin{titlepage}
+%\begin{center}
+%  \centering
+%\vskip 60pt
+%\lARGE Share Buyback and Equity Issue Anomalies Revisited \par
+%\vskip 1.5em
+%\normalsize  \today
+%\noindent \\ 
+%\begin{abstract}
+%\noindent We find a U-shaped relation between post buyback announcement long-run excess returns and firm centrality in the Input-Output trade flow network. As centrality may relate non-linearly to information asymmetry between firm insiders and outside investors, these results provide direct support for the {\it market timing} hypothesis of buybacks: while high centrality can increase information asymmetry due to {\it information processing costs}, low centrality can increase it due to {\it information availability} differences. Strikingly, unlike all past findings of positive abnormal returns in the literature on repurchases, significantly {\it negative} post-buyback long-run excess returns are observed for some mid-centrality firms. 
+%\end{abstract}
+%\vspace{2cm}
+%\end{center}
+%\medskip
+%\noindent \textit{JEl classification}: G35
+%\medskip
+%\noindent \textit{Keywords}: Share Buybacks, Seasoned Equity Offerings
+%\end{titlepage}
+
+\setlist{noitemsep}  % Reduce space between list items (itemize, enumerate, etc.)
+
+% Use endnotes instead of footnotes - redefine \footnote command
+
+\title{\textbf{Network Centrality and Managerial Market Timing Ability: \\ 
+Evidence from Open-Market Repurchase Announcements}}%\footnotetext{}
+
+\author{\uppercase{ Theodoros Evgeniou, Theo Vermaelen}, and \uppercase{Ling Yue}\thanks{INSEAD, Bd de Constance, 77300 Fontainebleau, France, phone: +33(0)1 6072 4000, e-mail:   \href{mailto:theodoros.evgeniou@insead.edu}{theodoros.evgeniou@insead.edu},  \href{mailto:theo.vermaelen@insead.edu}{theo.vermaelen@insead.edu}, and \href{mailto:ling.yue@insead.edu}{ling.yue@insead.edu}. }}
+
+
+\date{\today}              % No date for final submission
+
+% Create title page with no page number
+
+\renewcommand{\thefootnote}{\fnsymbol{footnote}}
+
+\singlespacing
+
+\maketitle
+
+\vspace{-.2in}
+\begin{abstract}
+\noindent  We find a U-shaped relationship between long-run excess returns after buyback announcements and firm centrality in the Input-Output trade flow network. As centrality may be non-linearly related to information  asymmetry between firm insiders and outside investors, these results provide direct support for the {\it market timing} hypothesis of buybacks: while high centrality can increase information asymmetry due to {\it information processing costs}, low centrality can increase it due to {\it information availability} differences. Strikingly, unlike all past findings of positive abnormal returns in the literature on repurchases, significantly {\it negative} post-buyback long-run excess returns are observed for some mid-centrality firms.  
+\end{abstract}
+\vspace{2cm}
+
+\noindent All source code as well as an interactive online tool to explore data variations and robustness analyses of all results in this paper is available at \href{http://tevgeniou.github.io/FirmNetworkBuybacks/}{tevgeniou.github.io/FirmNetworkBuybacks}.
+
+\medskip
+
+%\noindent  \textit{JEl classification}: G35; G14; G32
+
+\medskip
+%\noindent \textit{Keywords}: Share Buybacks; Seasoned Equity Offerings; Anomalies; Volatility
+
+\thispagestyle{empty}
+
+\onehalfspacing
+\setcounter{footnote}{0}
+\renewcommand{\thefootnote}{\arabic{footnote}}
+\setcounter{page}{1}
+
+\doublespacing
+
+\clearpage
+
+\section{Introduction}
+\label{sec:Introduction}
+
+When companies buy back stock markets on average underreact to the buyback announcement [e.g. \citealt{IkenberryLakonishokVermaelen1995,PeyerVermaelen2009,Evgeniouetal2016}]. The most widely accepted interpretation of this result is that firms are using private information to buy undervalued stock to benefit long-term shareholders. This {\it market timing} hypothesis assumes that managers have an information advantage over financial markets. Two natural questions then are what specific factors determine the level of information asymmetry and thus managers' ability to time the market, and is there indeed a relationship between those factors and post-repurchase announcements abnormal returns? \cite{PeyerVermaelen2009} argue that this ability is larger for small firms as they are followed by fewer analysts, while \cite{Evgeniouetal2016} show that it is larger for firms with high idiosyncratic volatility. High idiosyncratic volatility means that the value of the firm is driven by mostly company-specific information, potentially giving a competitive advantage to the management. However, past literature has not studied specific firm characteristics that may be related to information asymmetry - other than size and the broad measure of idiosyncratic volatility that summarizes all possible information asymmetry drivers. The link between the {\it market timing} hypothesis due to {\it information asymmetry} and post-buyback abnormal returns has therefore been to some extent quite general (i.e., not very specific about the sources of the information advantage of the management). 
+
+The purpose of this paper is to study a specific potential driver of information asymmetry between company insiders and outside investors, namely firm centrality in the supplier-customer network (which we will call firm centrality, for short), and use it to further test the market timing hypothesis in the context of share repurchases. Firm centrality may relate to insiders' information advantage in different, and conflicting, ways.  Consider two drivers of this asymmetry: a) the marginal information contribution of each economic link on the total information available about a firm's cash flow, and b) the information processing costs of investors as the number of economic links increases. On one hand, insiders may have better (marginal) information per link, but the impact decreases as the number of links increases (with many links, each cash flow of the linked firm has less impact on the total cash flow information). Hence insiders have an {\it information availability} advantage for peripheral firms. On the other hand, as firm centrality increases the higher information processing costs of outsiders (e.g., due to limited attention of investors) creates an information disadvantage for them. Hence, insiders have an {\it information processing cost} advantage for highly central firms. 
+
+Overall the net effect of these two can lead to a U-shaped relationship between centrality and the information advantage of the firm insiders: for low centrality the marginal (per link) {\it information availability} advantage of insiders can lead to a large information advantage for them, while when centrality is high the larger {\it information processing cost} for the outside investors may also lead to a large information disadvantage for them. For intermediate centrality levels, the net effect of the two (increasing information availability but also increasing information processing cost for the outside investors) can be overall advantageous for the outside investors.  We provide a simple model to formalize these arguments in Section \ref{sec:theory}. The model shows that there can indeed be a U-curve relationship between centrality and information advantage of the firm's management, based on the two hypotheses outlined above.  If so,  based on the market timing hypothesis one would also expect a U-shaped relationship between centrality and post-buyback abnormal returns, which is exactly what we find in our empirical results. Over a period of 48 months following buyback announcements, the excess returns of the most central and peripheral firms (quintiles Q5 and Q1) are on average \Sexpr{mean(irats_all["+48","Q5-Q4"],irats_all["+48","Q1-Q4"])}$\%$ higher than those of mid-central firms (Q4). The latter are also significantly negative for some firms (e.g., larger firms or firms covered by many analysts). We further show that this U-shaped relation is mitigated when stock prices incorporate more information from trade partners (i.e., firms followed by more supply-chain analysts). 
+
+A firm is central in the product market network if, for example, it has many direct economic links as measured by its {\it degree centrality} \citep{Freeman1977}.\footnote{Second-order effects may also exist from the inter-firm trade relations and complexity of directly linked firms, as captured by other centrality measures, such as {\it eigenvector centrality} \citep{Bonacich1972}. We use other measures of centrality for robustness tests.}  Shocks originating in or transmitted through a firm's direct trade partners affect its stock price as supplier and customer firms may have correlated cash flows [e.g. \cite{CohenFrazzini2008} and \cite{MenzlyOzbas2010}]. In an efficient market, investors can trace the effect of economic shocks through the supply chain to predict the effect on stock prices. However, past empirical evidence suggests that investors may ignore customer-supplier links, due to factors such as limited attention or information processing costs. For example \cite{CohenFrazzini2008} show that stock prices of suppliers underreact to the stock price performance of their major customers. They show that a long-short strategy based on this underreaction generates an impressive alpha of 1.5$\%$ per month. 
+
+On one hand, more central firms have more complex supplier-customer portfolios. Thus, investors' limited attention constraints have a larger effect when incorporating relevant news from many trade partners. Hence, the impact of {\it information processing costs} increases with firm centrality. If insider managers of a firm have more up-to-date information or a better understanding of the  economic links of the firm, their information advantage relative to the market increases with firm centrality.  Note that this assumes that it is less costly for managers than for outsiders to collect information about suppliers and customers relevant to the business. As a result, the benefit of market timing activities (i.e., repurchasing undervalued stock) is larger for more central firms than peripheral ones, which we will refer to as the {\it information processing cost hypothesis}. 
+
+On the other hand, as the market uses information from economic links to value firms [e.g. \cite{CohenFrazzini2008} and \cite{MenzlyOzbas2010}], the market has fewer sources of information to evaluate peripheral firms than central ones. Because managers may have better firm-specific knowledge {\it per link}, the information advantage of the management relative to the market may increase as firm centrality decreases. Consider for example the extreme case where the firm has only one customer or supplier. The behavior of this customer or supplier will have a huge impact on the value of the firm, and so any advantage the management may have regarding information about this specific customer or supplier will have more impact. Thus, according to the {\it (marginal) information availability hypothesis} managers are more likely to repurchase undervalued shares in peripheral firms. 
+
+Overall, it is an empirical question which of these two competing effects dominates. We study this question in the context of share repurchases using as a proxy for firm centrality the centrality of the firm's industry, following \cite{Ahern2012}. We measure industry centrality based on the inter-industry trade flow network constructed using the Input-Output (I-O) tables from the U.S. Bureau of Economic Analysis (BEA). There are several reasons for using this proxy: (1) the I-O industry classification is at a detailed level (e.g. 410 industries in 2002), and so the number of firms in each industry is small; (2) our target sample consists of public firms in the major exchanges that can be considered as representative of their industry; and (3) firms of the same industry are closer to each other in terms of centrality than firms from different industries. Moreover, we want to capture the effect from both public and private trade partners and economic links between them. To the best of our knowledge, I-O tables are the best data available for such a complete trade-flow network of all public and private firms in the United States, as also argued and used by others, including \cite{Acemogluetal2012}, \cite{AhernHarford2014}, and \cite{MenzlyOzbas2010}. 
+
+As mentioned above, in this paper we measure centrality by degree centrality (i.e., the number of direct economic links). For example, in the 2002 I-O network, the Wholesale Trade industry has 372 substantial direct connections with other industries, and its degree centrality is ranked the highest of all industries. To value a firm in this industry - such as TESSCO Technologies Incorporated (NASDAQ: TESS), an electronic parts and equipment merchant wholesaler - an outside investor may need to use information about  up-to-date sales/input contribution from all directly linked industries. However, as it is hard for an investor to follow all 372 industries at the same time, the {\it information processing costs} are very high for these firms. On the other end, the Computer Storage Device Manufacturing industry had only ten substantial direct trade relationships in the 2002 I-O network and thus its degree centrality was ranked among the lowest (376$^{th}$ out of 410 industries). To value a firm in this industry - such as NetApp, Inc. (NASDAQ: NTAP), a storage and data management company and a component of the S\&P 500 - investors face much lower information processing costs as they need to cover only the ten industries that are directly linked to the Computer Storage Device Manufacturing industry. However, any information availability advantage insiders may have for each of these ten cash flow relations will be relatively (marginally) more important.
+
+To test whether management's information advantage depends on firm centrality, we use  \Sexpr{length(BUYBACK_DATA_NETWORK$BEME_used)} open-market share repurchase authorization  announcements of U.S. firms between October \Sexpr{firstyear} and December \Sexpr{lastyear}. As the most recent I-O report available from BEA was published in 2007,  we used reports published in 1997, 2002, and 2007. To examine whether inter-industry network centrality is related to long-run excess returns after buyback authorization announcements, we carried out the following steps. First, we sorted all CRSP firms according to their centrality score in each calendar month and split buyback events into five groups using these centrality scores (Q1 to Q5, from the least central to the most central). Then we analyzed the post-announcement long-run excess returns for each centrality subgroup. Second, using double sorting we tested whether centrality acts as a proxy for other predictors of long-term excess returns reported in the share repurchase anomaly literature  [e.g. \cite{PeyerVermaelen2009}, \cite{Evgeniouetal2016}], such as volatility, idiosyncratic volatility, prior returns, market to book, firm size, and analyst coverage. Finally,  we regressed long-run excess returns on centrality (and centrality squared), controlling for the above known factors. 
+
+All of these tests show that the relationship between long-run Cumulative Abnormal Returns (CAR) and centrality is U-shaped. In other words, excess returns are largest in the low and high centrality samples.  The most central and the most peripheral firms are the most likely to be mispriced, in agreement with the information processing costs and (marginal) information availability hypotheses, respectively. Moreover, after controlling for idiosyncratic volatility (a proxy for firm-specific information in stock prices), analyst coverage (a proxy for the information environment), return volatility (a proxy for the option value of buyback announcements), and the U-index [the \cite{PeyerVermaelen2009} proxy for the likelihood of firm undervaluation], centrality still significantly affects post-event excess returns in a U-shaped way.
+
+In summary, this paper contributes to the literature on managerial market timing ability in the context of share repurchases. It also relates to the literature of investors' delayed and biased reactions to information. The basic theme of this literature is that, if investors have limited resources and capacity to collect, interpret, and finally trade on value-relevant information, we would expect asset prices to incorporate information only gradually. Our paper suggests that this limited attention constraint increases with the firm centrality in the product network.
+
+This paper also relates to recent work that studies networks in finance.\footnote{See also \cite{AllenBabus2009} for a recent summary paper.} \cite{Acemogluetal2012} showed theoretically that microeconomic idiosyncratic shocks can lead to aggregate fluctuations when there is a small number of central suppliers. Building on this theory, \cite{Ahern2013} and \cite{Aobdiaetal2014} found that central industries in the inter-industry trade flow network covary more with aggregate fluctuations. Consistent with this result, we find that peripheral firms have  higher idiosyncratic volatility, which may partially explain  the high long-run excess returns after buyback announcements \citep{Evgeniouetal2016}.
+
+This paper is organized as follows. We start in Section \ref{sec:theory} with a simple model that formalizes the main hypotheses about the relation between centrality and possible information advantage of a firm's insiders relative to outside investors. We then move to the empirical (main) part of the paper. Section \ref{sec:Data} presents our data: the trade-flow network, the sample of open-market share repurchase authorization announcements, and the analyst recommendation data. Section \ref{sec:mainsection} tests whether centrality predicts long-run excess returns and whether the observed U-shape can be explained by the fact that centrality is correlated with other variables that explain long-run excess returns reported in previous research. Section \ref{sec:crossregr} estimates the marginal contribution of centrality as an explanatory variable in cross-sectional regressions explaining long-run excess returns. Section \ref{sec:robustnessall} discusses the effect of supply-chain analyst coverage and performs robustness checks. Section \ref{sec:conclusion} concludes. 
+
+
+\section{A Model of Centrality and Information Asymmetry}
+\label{sec:theory}
+
+In this section we formalize the intuition about the relationship between centrality and managerial information advantage. In particular, we show that under certain conditions, this relationship is expected to be U-shaped.
+
+Consider a firm whose total cash flow $TF$ depends on a multiplicative production function that depends on $N$ i.i.d. shocks $S_i$ for $i \in 1 \dots N$ (in our case depending on the links of this firm with $N$ other firms), e.g. $TF = \prod_{i=1}^N S_i$.  The economic interpretation for such a production function is that the firm is made up of complementary (rather than substitutable) businesses/tasks, i.e. a high value for each shock is necessary for obtaining a high cash flow $TF$ - see for example \cite{Kremer1993}.\footnote{Assuming an additive production function - for example for firms with substitutable tasks  - does not change this analysis.} Taking the logarithm for both sides of the production function leads to the equation $\log(TF) = \sum_{i=1}^N \log(S_i)$. We will be working with this equation, so for simplicity of notation we will note $\log(TF)$ with just $F$ and $\log(S_i)$ with just $F_i$. We also call the units of $F$ and $F_i$ as ''dollars'' (hence, we do not consider the logarithm of the units). To keep the firm size constant as $N$ varies, we assume for simplicity that $E(F) = 1$ (i.e., the size of the focal firm does not depend on the number of links $N$). 
+
+Note with $\sigma_i(x)$ the standard deviation (e.g. uncertainty ''per expected dollar'') of the estimated $F_i$ for link $i$ for the firm insiders, and with $\delta_i(x)$ that for the outside investors, for attention level $x \in [0,1]$. That is, if the (expected) $F_i$ is \$1, the standard deviations of the estimates of $F_i$ of the insiders and outsiders are exactly $\sigma_i(x)$ and $\delta_i(x)$, respectively - hence, we assume for simplicity that these standard deviations scale linearly with the dollar value $F_i$. Both these uncertainties are also decreasing functions of the attention $x$ (or information gathering effort) insiders (or outsiders) spend for a given link $i$ (i.e., the larger  the attention/effort $x$, the smaller the $\sigma_i(x)$ and $\delta_i(x)$ are). Assume that both insiders and outsiders have a total attention (effort) capacity that is fixed, denoted with $A_I$ and $A_O$, respectively, which is equally spent across all $N$ links. For simplicity (and without loss of generality), let $A_I = A_O = 1$ - we will consider any information processing cost differences below.
+
+We can then note the uncertainty (per dollar) {\it per link} with the functions $\sigma_i(1/N)$ and $\delta_i(1/N)$, which decrease with the effort $1/N$ spent on each link $i$, hence increase with $N$. Higher {\it information processing costs} for outsiders means that eventually (for large enough $N$) uncertainty $\delta_i(1/N)$ increases with $N$ faster than $\sigma_i(1/N)$ does. We assume that these functions are such that for any attention (effort) $x$, we have that $\sigma_i(x) < \delta_i(x)$ - that is, insiders can have less uncertainty (can get more information) about the cash flow of their firm with another {\it given} firm $i$ than outsiders can, for the same effort $x$. This corresponds to the insiders' {\it information availability} advantage hypothesis.  
+
+Assume for simplicity that all cash flows are uncorrelated\footnote{Adding correlations does not affect the analysis, as $N$ can just be replaced by an ''effective number'' of links, related to the eigenvalues of the correlation matrix of the $N$ cash flows.}, and that, without loss of generality, all $\sigma_i$ are equal to $\sigma$, all $\delta_i$ are equal to $\delta$,  and all $F_i$ are equal - that is $F_i = F/N = 1/N$. The uncertainty (variance) that insiders have about the total firm cash flow is then given by $V_I = \sum_{i=1 \dots N} (F/N)^2 \sigma_i(1/N)^2 = (1/N)\sigma(1/N)^2$ while that of outsiders is similarly given by $V_O = \sum_{i=1 \dots N} (F/N)^2 \delta_i(1/N)^2 = (1/N)\delta(1/N)^2$.  
+
+The difference in uncertainty about the total firm cash flow between insiders and outsiders (a measure of the insiders' information advantage) can be measured by the difference ($V_O -  V_I$). When this is positive, outsiders are  more uncertain about the total firm cash flow, so insiders have an information advantage. The larger this difference, the larger the information advantage of the insiders. The main question then is how this difference changes as $N$ increases.  Clearly this depends on how $(1/N) \cdot [\delta(1/N)^2 - \sigma(1/N)^2]$ behaves as a function of $N$, under the assumptions outlined above.
+
+Consider, for example, the following functional forms for $\sigma$ and $\delta$ that satisfy our two hypotheses: $\sigma(x)^2 = \sigma_0 \cdot (1/x) + \alpha \cdot (1/x)^2$ and $\delta(x)^2 = \delta_0 \cdot (1/x) + \beta \cdot (1/x)^3$, for $0 < x < 1$, with $\sigma_0$, $\alpha$, $\delta_0$,  and $\beta$ such that $\sigma(x)^2 < \delta(x)^2$ for any $0 < x < 1$ and that as $x$ decreases (e.g. $N$ increases) $\delta$ increases faster than $\sigma$ after some value $x_0 < 1$. The information advantage of insiders is then given by:
+$$
+V_O - V_I  = (1/N)[\beta N^3  - \alpha N^2 + (\delta_0 - \sigma_0)N] = \beta N^2 - \alpha N + (\delta_0 - \sigma_0).
+$$
+Depending on the values of $\alpha$, $\beta$, $\sigma_0$, and $\delta_0$ that still satisfy the assumptions above, the model can predict a U-curve relationship between $N$ (i.e., centrality) and $V_O - V_I$ (i.e., information advantage of the firm insiders) for a (large enough) range of $N$.  For example, Figure \ref{fig:ucurvemodel} shows a U-curve for $\alpha = 0.2$, $\beta = 0.007$, $\sigma_0 = 0.2$, and $\delta_0  = 1.7$. In the following empirical section, we will test whether indeed such a relationship between centrality and information advantage exists. 
+
+
+\section{Data}
+\label{sec:Data}
+
+\subsection{Share Repurchases and Firm Data}
+\label{sec:datarepurchases}
+
+Our sample of buyback announcements spans the period from October \Sexpr{firstyear} to December \Sexpr{lastyear}. We started from October \Sexpr{firstyear} because analyst recommendation data were sparse prior to \Sexpr{firstyear} \citep{BoniWomack2006}. Also, the first supplier-customer network after \Sexpr{firstyear} was constructed in 1997, with the U.S. federal government's 1997 fiscal year starting on October 1, 1996. We retrieved buyback authorization announcements from the Securities Data Corporation (SDC) database. Monthly returns and market capitalization data were taken from CRSP. Book value of equity (BE) and industry classifications (NAICS and SIC) were taken from Compustat. The Fama-French factors were obtained from Kenneth French's website. Analyst recommendation data were taken from the I/B/E/S Summary History Recommendation file. 
+
+
+<< fig.width=10, fig.height=6, out.width='\\textwidth', echo=F >>=
+cleanup_bb = list()
+cleanup_bb$Standardise <- BUYBACK_DATA_NETWORK$cleanupSDC$Standardise
+cleanup_bb$biz_clean <- BUYBACK_DATA_NETWORK$cleanupBIZ
+cusip_bb = BUYBACK_DATA_NETWORK$DATASET$SDC$CUSIP
+event.date_bb = BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date
+permno_bb = BUYBACK_DATA_NETWORK$DATASET$SDC$permno
+
+@
+
+
+
+For the buybacks we combined all open market repurchase announcements from both the SDC Repurchases database and the SDC US mergers and acquisitions (M$\&$A) data base, ending up with a total of \Sexpr{BUYBACK_DATA_NETWORK$cleanupnetwork$pre_missingnetwork} repurchase events.\footnote{More information is available upon request. All source code as well as an interactive online tool to explore data variations and robustness analyses of all results in this paper is available at \href{http://tevgeniou.github.io/FirmNetworkBuybacks/}{tevgeniou.github.io/FirmNetworkBuybacks}.} We removed the following events: (1) no network centrality was available; (2) no CRSP returns were available;  (3) not all Compustat data were available;  (4) the percentage of shares authorized was larger than \Sexpr{MAX_EVENT_SIZE}$\%$,  or the one month pre-announcement closing price was less than \$\Sexpr{penny_stock_price_recent}, or the primary stock exchange was not the NYSE, NASDAQ, or AMEX; (5) the firm belonged to the Financial or Utilities sector. We obtained a final sample containing \Sexpr{length(BUYBACK_DATA_NETWORK$BEME_used)} buyback events made by \Sexpr{length(unique(BUYBACK_DATA_NETWORK$DATASET$SDC$permno))} firms. Figure~\ref{fig:liveevents} shows the number of announcements per year in the sample period as well as the (standardized) level of the $S\&P$ 500 index. The average percent of shares authorized for these firms was \Sexpr{datasummaryBB["Percent authorized", "Mean"]}$\%$ (median of \Sexpr{datasummaryBB["Percent authorized", "Median"]}$\%$), the average market capitalization at announcement was \$\Sexpr{datasummaryBB["Market cap.", "Mean"]} million (median of \$\Sexpr{datasummaryBB["Market cap.", "Median"]} million), while the BE/ME was on average \Sexpr{datasummaryBB["BE/ME", "Mean"]} (median of \Sexpr{datasummaryBB["BE/ME", "Median"]}). We also collected consensus analyst recommendations in the two months prior to the buyback announcement. In the month before the buyback announcement \Sexpr{sum(downgraded_events)} firms were downgraded, \Sexpr{sum(upgraded_events)} were upgraded, and in \Sexpr{sum(!downgraded_events & !upgraded_events)} cases the recommendation consensus remained unchanged.   
+
+
+
+
+\subsection{Supplier-Customer Network and Centrality Measures}
+\label{sec:supcustnetwork}
+
+We defined firm centrality using an industry-level supplier-customer trade network, as it is very difficult to build a firm-level trade network because of data limitations. Following \cite{Ahern2012}, we constructed a network of industries connected by inter-industry trade flows [e.g. \cite{Acemogluetal2012}; \cite{AhernHarford2014}] and measured a firm's centrality in the network as that of its industry. Since 1947, the Bureau of Economic Analysis (BEA) has provided Input-Output (I-O) accounts of dollar flows between all producers and purchasers in the U.S. economy. Producers include all industrial and service sectors as well as household ones. The I-O tables are based primarily on data from the Economic Census and are updated every five years with a five-year lag, so we use only three I-O reports (1997, 2002, and 2007). 
+
+As argued in the literature [e.g. \cite{Ahern2012,AhernHarford2014}], using industry-level network centrality as a proxy for firm centrality  is reasonable. Indeed, the inter-industry trade flow data are currently the best available data for a supplier-customer network that covers all sectors in the economy and accounts for trade relations between all public and private firms. Possible error in using the industry position as a proxy for firm position is smaller than it appears for three reasons: (1) the industry classification used for our analysis is very narrowly defined - we considered, for example, 410 detailed I-O industries in 2002 - which reduces the firm heterogeneity in each industry, (2) firms in our study are publicly traded firms followed by analysts, and they are also relatively large firms (the mean percentile of market equity  at the month of the buyback announcement  is \Sexpr{mean(BUYBACK_DATA_NETWORK$DATASET$CRSP$Market.Cap_score)}, which is statistically significantly different from (the median) 0.5 (t $>$ 10), so our firms  are more likely to be representative for the  industry), and (3) firms of the same industry are closer to each other in terms of centrality than those from different industries.
+
+The construction of the trade-flow network in each I-O report year follows \cite{AhernHarford2014}. From the Use and Make tables, we created matrices that record flows of inputs and outputs between industries (the first graph in Figure \ref{fig:IOcentrality}). To avoid any biases due to some large dollar-value trade flows, each trade flow is standardized by its purchaser's total input (the second graph in Figure \ref{fig:IOcentrality}), which gives an asymmetric and directed I-O network, namely the supplier network. Selecting the larger number of the two directed links between two industries generates an undirected supplier network (the third graph in Figure \ref{fig:IOcentrality}). This network captures each I-O industry's role as both a customer and a supplier of directly linked industries. Economic shocks transmit through the supplier network via the impact, for example, of input quantity or price. For example, members of the Petroleum Refineries industry (e.g., Exxon Mobile) supply an excess quantity of gasoline, which lowers oil prices. As a result, transportation companies (e.g., U.S. Xpress and FedEx) may have lower costs, and later, companies in the Retail Trade industry (e.g., Gap Inc. and Amazon.com) may be more profitable. Finally, after excluding household and government industries, as well as exports and imports, we are left with 470, 410, and 368 industries in 1997, 2002, and 2007, respectively.
+
+A number of measures have been developed to quantify centrality in networks, including degree, closeness, betweenness, and eigenvector centrality. Degree centrality measures the number of direct connections a node has if the network is unweighted \citep{Freeman1977}. A corresponding weighted measure is strength centrality \citep{Barratetal2004}. In this case the weights are the ''strength'' of each industry-pair link - that is, the percentage of input supplied by the linked industry.  Closeness centrality provides higher centrality scores to nodes that are situated closer to members of their component (the set of reachable nodes) \citep{Freeman1977}. Betweenness centrality bestows larger centrality scores on nodes that lie on a larger proportion of shortest paths linking pairs of other nodes \citep{Anthonisse1971,Freeman1977}. Eigenvector centrality can indicate how important a node is by being large if a node has many neighbors, important neighbors, or both \citep{Bonacich1972}. One limitation of eigenvector centrality in our context is that it does not allow connection values to decay when industry distance increases, while one should expect that the effect of complexity is smaller for more distant industries. A modified version of eigenvector centrality, Katz-Bonacich (K-B, henceforth) centrality [e.g. \cite{Bonacich1987}, and \cite{BonacichLloyd2001}] deals with this limitation of the eigenvector centrality.
+
+Because degree centrality is more straightforward to understand as it captures the first-order effect of firm centrality on management's information advantage relative to the markets, we employed degree centrality as our primary measure in the main analysis. In the robustness tests, we also used the strength, betweenness, eigenvector, and K-B centrality measures.\footnote{All of our network measures were calculated with the Stata package netsis provided by \cite{Miura2012}.} 
+
+
+\subsection{Merging Firm Data with I-O Industry Network Data}
+\label{sec:datamerge}
+
+To merge firms with I-O industry codes, we relied mainly on concordance tables between NAICS (or SIC) and I-O codes provided by the Bureau of Economic Analysis (BEA). We assume that I-O accounts follow the U.S. federal government's fiscal year, which runs from October 1$^{st}$ of the previous calendar year to September 30$^{th}$. Note that we have I-O industry classifications only in 1997, 2002, and 2007. Hence, for firm-month observations from October 1996 (2002) to September 2001 (2006) we used the I-O industry classification of 1997 (2002) and for firm-months from October 2006 to December 2015 we used the I-O table of 2007. 
+
+
+Table \ref{tbl:IOsummary} reports the summary statistics of I-O industries in each of the three supplier networks. Panel A describes the centrality statistics of all industries. The mean degree centrality of all I-O industries in 1997, 2002, and 2007 is 23, 24.5, and 24, respectively. While the mean degree centrality varies little over time, the total number of I-O industries decreased from 1997 to 2007, as industries became more intensely connected in the trade-flow network. These supplier networks exhibit ''small-world'' properties: across the 368 to 470 industries, depending on the year, a typical industry is only about two connections away from any other industry, and the maximum shortest path between any two industries is only three. 
+
+The centrality distribution is highly skewed with a few extremely central industries (i.e., hubs) in every supplier network. For example, in the 2002 supplier network the Wholesale Trade industry has a K-B centrality of 40; all other industries' K-B values are lower than 20. Tables \ref{tbl:IOtablesPanelA} and  \ref{tbl:IOtablesPanelB} report the 15 most and least central industries in each of these supplier networks according to degree centrality. The top three most central industries in every network are Wholesale Trade, Management of Companies and Enterprises, and Truck Transportation. The least central industries are Religious Organizations and Schools.
+
+About 89$\%$ of I-O industries have some public firms (with data available in CRSP/Compustat merged database); they range from the most to the least central industries (Panel B, Table \ref{tbl:IOsummary}). On average, about 65$\%$ of I-O industries in our final sample have repurchase announcements, and they have no significant difference in terms of industry-level centrality with other industries (Panel C, Table \ref{tbl:IOsummary}). 
+
+
+\section{Centrality and Post-Buyback Announcement Long-Run Returns}
+\label{sec:mainsection}
+
+Following the literature on the long-run anomaly of share repurchases [e.g. \cite{IkenberryLakonishokVermaelen1995} and \cite{PeyerVermaelen2009}], we first applied the Ibbotson's Returns across Time and Securities (IRATS) procedure (1975). For each event month $t$ we ran cross-section regressions of stock returns against the Fama-French factors. The intercept in the regression measures the average abnormal excess return in event month $t$. We then accumulated these excess returns over various time horizons (up to 48 months after the event). Table \ref{tbl:abnormalallirats} shows the excess returns using the \cite{FamaFrench1993} three-factor model (Panel A) and the \cite{FamaFrench2015} five-factor model (Panel B). The first columns show the excess returns for all buyback events, which are statistically significantly positive over all horizons with both models. The five-factor IRATS model adjusts for more risk factors and thus generates lower excess returns than the three-factor model (\Sexpr{irats_all["+48","All"]}$\%$ vs. \Sexpr{irats_all_3f["+48","All 3F"]}$\%$ after 48 months). 
+
+\subsection{Centrality and Long-Run Excess Returns}
+\label{sec:centrlong}
+
+To examine the relationship between centrality and long-run excess returns, we started with a single-sort approach and split all buyback events into subgroups based on their centrality. Because the raw centrality values are from three different I-O networks, they are not comparable over time. To make buyback events from different times comparable by centrality, we first created a cross-sectional centrality score ranging from 0 to 1, using the following formula:
+
+\begin{equation}
+\mbox{Centrality Score}_{it} =  (\mbox{Centrality}_{it} - \min(\mbox{Centrality}_t))/(\max(\mbox{Centrality}_t)-\min(\mbox{Centrality}_t)),
+\label{eq:centrdef}
+\end{equation}
+
+\noindent where $\mbox{Centrality}_{it}$ is firm $i$'s centrality in calendar month $t$ and the minimum (maximum) centrality is calculated across all firms in the CRSP universe also in calendar month $t$. This construction gives a median Centrality Score of 0.5 for all CRSP firms over the sample period. Our sample of buyback announcements were made by less central firms as the mean Centrality Score of buyback events is \Sexpr{mean(centrality_used)}, significantly smaller than 0.5 ($p < 0.01$). 
+
+We ranked all buyback events by Centrality Score and split them into five quintile groups: Q1 indicates the least central group; Q2, Q3, and Q4 indicate increasing centrality; and Q5 indicates the most central group. Table \ref{tbl:abnormalallirats} and Figure \ref{fig:centrality} also report the long-run excess returns (CAR) for each of these centrality subgroups. The results show that there is a U-shaped relationship between CAR and centrality, over all horizons, with the lowest CAR in Q4 and the highest CARs in Q1 and Q5. The U-shaped relationship appears in both the three-factor and the five-factor models but is more pronounced in the latter one. Specifically, with the Fama-French five-factor model, after 48 months the CAR difference between the Q1 and Q4 quintiles is \Sexpr{irats_all["+48","Q1-Q4"]}$\%$ ($t$ =  \Sexpr{irats_all["+48",20]}) and the CAR difference between Q5 and Q4 is \Sexpr{irats_all["+48","Q5-Q4"]}$\%$ ($t$ = \Sexpr{irats_all["+48",23]}). Note that the CAR in Q4 is never significantly different from zero at the 5$\%$ level, regardless of the investment horizon. These results indicate that both of our hypothesized effects may play a role: the information processing cost hypothesis is more pronounced for the more central firms, and the information availability assymetry hypothesis plays a more important role for the more peripheral firms.
+
+One critique of the \cite{Ibbotson1975} IRATS method is that the result may be time-specific and the cumulative abnormal returns are dominated by periods when there is a large number of events. So we also used the Calendar Time method: in each calendar month we formed an equally weighted portfolio of all firms that had announced a buyback in the previous $t$ months. We then ran a time series regression of the portfolio returns against the factors. The intercept of the regression is the average monthly excess return in the $t$ months after the event. 
+
+Table \ref{tbl:abnormalallcal} reports the results from the three-factor and five-factor Calendar Time Abnormal Returns (AR). Both models show to some extent a similar pattern for the relationship between post-event monthly excess returns and centrality. Although the AR for the Q5 sample is always higher than the AR for the Q4 sample, the differences are never statistically significant at the 5$\%$ level when we use the three-factor model. When we use the five-factor model the difference becomes statistically significant, however, although much less so than with the IRATS method. Nevertheless, as Figure \ref{fig:centrality} also shows, there is a clear U-shaped relationship between excess returns and centrality for both the IRATS CAR and the Calendar Time method AR. Therefore, for simplicity in the remainder of the paper we will focus on results from the five-factor Fama-French IRATS method.\footnote{Calendar Time AR results and three-factor Fama-French results are available upon request. Conclusions are qualitatively similar. }
+
+\subsection{Centrality Versus Other Predictors of Long-Run Excess Returns }
+\label{sec:centrother}
+
+Could the observed U-shaped relationship between long-run excess returns and centrality be explained because centrality is a proxy for other firm characteristics that affect the benefit of repurchasing undervalued stocks? Some examples of such firm characteristics can be firm size, market-to-book ratio, and prior return [combined in an Undervaluation Index (U-index) by \cite{PeyerVermaelen2009}], plus analyst coverage, idiosyncratic volatility, and total volatility combined with the U-index in an Enhanced Undervaluation index (EU-index) by \cite{Evgeniouetal2016}. 
+
+To check the power of alternative explanations, we performed double-sort tests and checked whether/how the U-shaped relationship varies with these firm characteristics. Following the same procedure to calculate the Centrality Score (Equation \ref{eq:centrdef}) we also standardized the return volatility, $(1-R^2)$, market beta, analyst coverage, market equity, prior 11-months returns, and book-to-market ratio (BE/ME) so that the median value for each characteristic is 0.5. Table \ref{tbl:centrOther} reports the average  value of each firm standardized characteristic for all buyback events and every centrality subgroup. Note that all characteristics are, on average, significantly different from 0.5 ($t$-statistics not shown), and note that the U- and EU- indices are not standardized between 0 and 1. For example, in the universe of CRSP firms, buyback firms are less central as the average centrality score is \Sexpr{centrality_var_relations["All","Degree"]}. On the other hand, with a score of \Sexpr{centrality_var_relations["All","Analyst-Cov."]} they are covered by relatively more analysts than the average CRSP firm, as they also are relatively larger. They are less risky than average when risk is measured by (idiosyncratic) risk or volatility and riskier when risk is measured by market beta.  The Q3 group has the lowest values for  volatility, the U-index, and the EU-index and contains relatively larger firms. Finally, idiosyncratic risk $(1-R^2)$ decreases with centrality. 
+
+While Table \ref{tbl:centrOther} reveals no obvious U-shaped relationship between centrality and any of the company characteristics (except volatility, the U-index, and the EU-index), it may still be the case that each of these characteristics can at least partially explain the relationship between long-run excess returns and centrality. For example, \cite{PeyerVermaelen2009} suggest that the post-event excess returns are higher for smaller firms as they are followed by fewer analysts. To test whether our results can be explained by size or analyst coverage we independently double-sorted firms by size and centrality: two size groups (analyst coverage) and five centrality groups (2 $\times$ 5). Results from the five-factor IRATS method (Tables \ref{tbl:abnormalallsize} and \ref{tbl:abnormalallcoverage}) show that larger firms or higher-analyst-coverage firms experience lower excess returns. Specifically, small (large) firms earn long-run excess returns after 48 months of \Sexpr{irats_small["+48","All"]}$\%$ (\Sexpr{irats_large["+48","All"]}$\%$), while firms with low (high) analyst coverage earn excess returns of \Sexpr{irats_Lcover["+48","All"]}$\%$ (\Sexpr{irats_Hcover["+48","All"]}$\%$). More important, the U-shaped relationship between IRATS CAR and centrality is unconditional on the group splitting based on firm size or analyst coverage. 
+
+In each case the CAR of the Q4 sample is significantly smaller than the CAR in the Q1 and Q5 samples. Note that the Q4 sample (not the Q3 one, as in Table \ref{tbl:centrOther}) is consistently the sample with the lowest excess returns. This is especially striking for the larger-size and higher-analyst-coverage samples where the firms in the  Q4 quintile always earn negative and significantly lower excess returns than the most central and peripheral firms, for all horizons. The highly significant negative long-run excess returns of close to \Sexpr{round(mean(c(irats_large["+48","Q4 CAR"],irats_Hcover["+48","Q4 CAR"])))}$\%$ after 48 months experienced by the high-analyst-coverage/large firms after buyback announcements is, to our knowledge, unprecedented in the buyback literature.  
+
+
+We hypothesize that low centrality firms in Q1 earn large excess returns because of lower information availability. An alternative explanation may be that this is due to the higher idiosyncratic volatility of these firms (see Table \ref{tbl:centrOther}). Central firms are more connected in the economy and have greater exposure to systematic risk, so the explanatory power of the standard risk factors is expected to be higher for central firms, i.e. the idiosyncratic volatility $(1-R^2)$ is lower for central firms than for peripheral ones \citep{Ahern2013}. Moreover, \cite{Evgeniouetal2016} find that long-run excess returns after buyback announcements are positively correlated with  idiosyncratic volatility. To test for the relevance of idiosyncratic volatility, we double-sorted firms as above by idiosyncratic volatility and centrality (2 $\times$ 5). Our results (Table \ref{tbl:abnormalallidio}) show that the U-shaped relationship between IRATS CAR and centrality exists for both high- and low-idiosyncratic firms: repurchase announcements by firms in the Q4 group are followed by the lowest (and not statistically significant) long-run excess returns. So while it is true that high idiosyncratic volatility is associated with larger long-run excess returns, it cannot explain why peripheral firms with low idiosyncratic risk are doing so well relative to more central firms. 
+
+Table \ref{tbl:centrOther} suggests that there is to some extent a U-shaped relationship between volatility and centrality with the lowest mean volatility in Q3. \cite{Evgeniouetal2016} find that high-volatility firms experience greater post-buyback excess returns because the value of the option to take advantage of an undervalued stock price is positively correlated with the volatility of the underlying firm \citep{IkenberryVermaelen1996}. So perhaps a third alternative explanation is that the U-shaped relationship between IRATS CAR and centrality is driven by firm volatility. The results from double-sorting (volatility $\times$ centrality) in Table \ref{tbl:abnormalallvol} show that low-volatility firms indeed experience very small CAR (\Sexpr{irats_Lvol["+48","All"]}$\%$ over 48 event months) compared to high-volatility firms (\Sexpr{irats_Hvol["+48","All"]}$\%$ over 48 months). However, the U-shaped relationship between CAR and centrality holds for both high- and low-volatility firms. These findings indicate that firm volatility may not be the only driver of the higher post-buyback excess returns of the high and low central firms. 
+
+
+Finally, the high CAR of the most and least central firms may be driven by the U-shaped relationship between the undervaluation index (U-index in \cite{PeyerVermaelen2009}) or the EU-index \citep{Evgeniouetal2016} and centrality, as shown in Table \ref{tbl:centrOther}. The results from the double-sorting method (U-index $\times$ centrality and EU-index $\times$ centrality) in Tables \ref{tbl:abnormalalluindex} and \ref{tbl:abnormalalleuindex} show that the U-shaped relationship between CAR and centrality shows up in all cases, although less clearly in the high-U-index and high-EU-index groups.  For high U-index firms, CAR appears higher in Q2 than in Q1  (\Sexpr{irats_Huindex["+48","Q2 CAR"]}$\%$ vs \Sexpr{irats_Huindex["+48","Q1 (Low) CAR"]}$\%$) while the lowest CAR is in Q3 (\Sexpr{irats_Huindex["+48","Q3 CAR"]}$\%$). Similarly for the high EU-index firms the highest CAR appears in the Q2 group (\Sexpr{irats_Heu["+48","Q2 CAR"]}$\%$). Nevertheless, as in our basic results, the U-shaped relationship between centrality and excess returns still exists regardless of whether the firm has a high or low U- or EU-index. We can therefore conclude that the U-index and EU-index cannot explain the CAR-centrality's U-shaped relationship. Moreover, as centrality provides additional explanatory power for the IRATS CAR on top of the EU-index,  it seems that the predictive capacity of the EU-index can be further improved by adding the centrality dimension, as we discuss below. 
+
+Summarizing, we find a U-shaped relationship between excess returns and centrality with the IRATS method. Specifically, firms in centrality quintile Q4, the second most central group, tend to have significantly lower long-run excess returns after buyback announcements than firms in centrality quintiles Q1 and Q5. Double-sorting firms by centrality and size, analyst coverage, $(1-R^2)$, or volatility does not affect this U-shaped relation. These results partially solve the concern that the centrality effect is simply proxy for other factors associated with long-run excess returns. While the same U-shaped relationship shows up in low-U-index or low-EU-index firms, the pattern changes somewhat in high-U-index or high-EU-index firms as buybacks by firms in Q1 are no longer followed by higher long-run excess returns in Q2. This suggests that U-index and EU-index are important factors for the CAR-centrality relation, but as the results indicate they still do not explain it. 
+
+\section{Cross-Sectional Analysis of Long-Run Excess Returns}
+\label{sec:crossregr}
+
+To test whether centrality has explanation power for excess returns in addition to known factors,  we also ran regressions of long-run monthly excess returns on centrality (and a centrality squared term \citep{LindMehlum2010}) and a number of control variables. Following \cite{Brennanetal1998}, we first estimated factor loadings $\beta_{jk, \tau}$ for each event $j$, risk factor $k$, and event month $\tau$ using data from the 60 months prior to the event month $\tau$ (requiring that there are at least 24 return observations during those 60 months). The risk factors used in our study are the \cite{FamaFrench2015} five factors ($R_M-R_F$, SMB, HML, RMW, and CMA). Factor loadings $\beta_{jk, \tau}$ are obtained from the following time series regression: 
+$$
+R_{jt}-R_{Ft} = a_j + b_j (R_{Mt}-R_{Ft}) + s_j SMB_t + h_j HML_t + r_j RMW_t + c_i CMA_t + e_{jt} = 
+$$
+\begin{equation}
+a_j +\sum_{k=1}^5 \beta_{jk, \tau} F_{kt} + e_{jt},
+\label{eq:eq1}
+\end{equation}
+\noindent where $F_{kt}$ indicates the $k^{th}$ risk factor in month $t$, and $t$ ranges over the 60 months before the event month $\tau$ for which returns are available. 
+
+Next, for each stock $j$ in event month $\tau$, we calculate the estimated risk-adjusted return $\Delta R_{j\tau}$ using the estimated $\beta_{jk, \tau}$ factor loadings:
+$$
+\Delta R_{j\tau} = (R_{j\tau}-R_{F\tau}) - [b_j (R_{M\tau} - R_{F\tau}) + s_j SMB_{\tau} + h_j HML_{\tau} + r_j RMW_{\tau} + c_i CMA_{\tau}] = 
+$$
+\begin{equation}
+(R_{j\tau}-R_{F\tau}) - \sum_{k=1}^5 \beta_{jk,\tau} F_{k\tau} 
+\label{eq:eq2}
+\end{equation}
+
+Then for all event stocks in each post-event month $\tau$ (from the 1$^{st}$ to the 48$^{th}$ month following the buyback announcement), we ran the following cross-section regression: 
+\begin{equation}
+\Delta R_{j\tau} = c_{0\tau} + \sum_{m=1}^M c_{m\tau} Z_{mj} + \epsilon_{j\tau},                                                       
+\label{eq:eq3}
+\end{equation}
+\noindent where $Z_{mj}$ are the $m^{th}$ characteristic of stock $j$ in the month prior to the buyback announcement, such as centrality, total volatility, $(1-R^2)$, analyst coverage, U-index, etc.
+
+Finally, we computed the  average of the monthly regression coefficient estimates $c_{m\tau}$ over the event months 3 through 48, $C_m^{n}$ for $n$ in 3 to 48. We calculated standard errors of the aggregated coefficients using the standard Fama-MacBeth approach \citep{FamaMacbeth1973}: the $t$-statistics for testing the hypothesis that $C_m^{n}=0$ are: 
+\begin{equation}
+t(C_m^{n}) = (C_m^{n})/(s(C_m^{n})/\sqrt{n})  
+\label{eq:eq4}
+\end{equation}
+\noindent where $n$ is the number of post-event months to calculate $C_m^{n}$ and $s(C_m^{n})$ is the standard deviation of the monthly estimates, $c_{m\tau}$ for $\tau$ in $1$ to $n$. We do this for three different time horizons $n$: 1 to 12 months, 1 to 24 months and 1 to 36 months.
+
+In Table \ref{tbl:crossindi} we regress long-run monthly excess returns on individual standardized firm characteristics. The significance of the characteristics depends on the investment horizon. For the 36- and 48-month horizons (long-run), we find results that are largely consistent with past research: small firms, value stocks, firms with a high EU-index, volatility, and $(1-R^2)$ experience larger  long-run excess returns. Note that the 36-month horizon is the ''optimal'' investment horizon in \cite{IkenberryLakonishokVermaelen1995} and \cite{PeyerVermaelen2009}. However, besides the EU-index and volatility, centrality and centrality squared are the only variables that are statistically significant over all investment horizons.  These results support the hypothesis that centrality is a significant determinant of long-run excess returns  and the relationship is indeed U-shaped.\footnote{To avoid co-linearity between the linear and square terms for centrality, we subtracted from every centrality score the mean score in each event month, generate a squared term of the de-mean centrality score, and then used these in the cross-section regressions.}
+
+In Tables \ref{tbl:crossall} and \ref{tbl:crossalldecomp} we run multivariate cross-sectional regressions. In Table \ref{tbl:crossall} we use the U-index as an independent variable, together with other variables that are not components of this index.\footnote{We do not use the EU-index of \cite{Evgeniouetal2016} as we include volatility and $(1-R^2)$.} In Table \ref{tbl:crossalldecomp}  we replace the U-index with its components (size, market to book, and prior return). The message from both tables is similar: we find that the relation between post-event excess returns and centrality is still U-shaped over all horizons. For control variables, only volatility is significantly positively correlated with long-run excess returns over all horizons. The coefficient on the U-index is negative and significant (at least over the 36-month horizon), while those of the square term of centrality and of volatility are always positive. This indicates that centrality and volatility have more robust effects on long-run excess returns than other undervaluation proxies. 
+
+\cite{PeyerVermaelen2009} find that open market repurchases are a response to a market overreaction to bad news, such as significant analyst downgrades. While, consistent with the literature, we found significant negative excess returns in the six months prior to the buyback announcement, for firms in all centrality groups, we also tested whether indeed it makes a difference whether analysts were (at least partially) responsible for the stock price decline. Table \ref{tbl:crossalldecompdown}  shows  regression coefficients on the centrality squared term for buyback announcements following analyst downgrades (Panel A) and upgrades (Panel B) in the  month prior to the repurchase announcement. The relationship between excess returns and centrality is almost flat for downgraded firms and has a  significant U shape for upgraded firms at the 10$\%$ level. Note that we do not have many events that were downgraded (\Sexpr{sum(downgraded_events)} events) or upgraded (\Sexpr{sum(upgraded_events)} events) before the repurchase announcement, which may partly explain the lack of significance of the results.  This indicates that while the management of all firms can take advantage of clear misvaluation caused by analyst mistakes, the management of central and peripheral firms have an information advantage even when analysts are optimistic. Such information advantage may be due to the markets' slow reaction to good news (including the news that may have led to the analyst upgrade). 
+
+
+\subsection{Combining Centrality With Other Return Predictors: The Central EU-Index}
+\label{sec:ceu}
+
+Based on the results so far, we extended the EU-index of \cite{Evgeniouetal2016} by adding to it the centrality dimension. Because the CAR-centrality relation is U-shaped, we assigned a score of 0 to the second most central quintile group (Q4) where CAR tends to be the lowest, a score of 1 to the middle groups (Q2 and Q3), and a score of 2 to the least and most central quintile groups (Q1 and Q5). Then we added these centrality scores to the EU-index to get a central EU-index (CEU-index). The CEU-index ranges from 0 to 8 and has a symmetric distribution with a mean of \Sexpr{mean(BUYBACK_DATA_NETWORK$CEU_index)} (Figure \ref{fig:undervaluationindex}). There are very few buyback events with a CEU-index of 8, which means that few firms with an EU-index of 6 have a centrality score of 2. This is again evidence that centrality is different from known factors that predict the success of market timing after buyback announcements.
+
+The excess returns of every CEU-index score are reported in Table \ref{tbl:CEUirats} and Figure \ref{fig:Epastall}. The results show a monotonically increasing relation between CAR and the CEU-index: firms with a CEU-index of 0 have the lowest CAR of \Sexpr{CEU_IRATStable_bb["+48",1]}$\%$ and those with a CEU-index of 8 have the highest CAR of \Sexpr{CEU_IRATStable_bb["+48",25]}$\%$, over 48 months after their buyback announcement. In unreported tables, we also find a similar pattern between Calendar Time monthly excess returns and the CEU-index. 
+
+\section{Robustness Tests and the Effects of Supply-Chain Analysts}
+\label{sec:robustnessall}
+
+\subsection{Robustness Tests}
+\label{sec:robustness}
+
+We next tested the effect of centrality on post-buyback excess returns using other centrality measures. First, we considered the strength centrality \citep{Barratetal2004}. While degree centrality gives equal weight to all direct links, strength centrality puts more weight on industries with stronger links with the focal industry. Thus, it can be considered as a proxy for a ''weighted'' complexity of  a firm's supplier-customer portfolio. Second, we considered two global centrality measures: eigenvector centrality \citep{Bonacich1972} and K-B centrality \citep{Bonacich1987,BonacichLloyd2001}. These two measures account for the centrality of linked industries and thus capture the second order complexity of a firm's portfolio, which comes from the inter-industry trade relations between trade partners and the complexity of trade partners. If our theory is correct - that is, the management's information advantage relative to outsiders increases with centrality due to information processing complexity and decreases with centrality due to information availability differences - then we predict a U-shaped relationship between post-buyback excess returns and each of our three centrality measures.  Table \ref{tbl:crossallrobust} shows  evidence that the U-shaped relationship is robust with respect to different centrality measures. Indeed, in all cases the coefficient on centrality squared is significantly positive for the (long-run) 36- and 48-month horizons.
+
+Finally, we considered the betweenness centrality \citep{Anthonisse1971,Freeman1977}, which measures an industry's role as a broker in the economy. In theory, betweenness centrality shows a node's importance in the network along a different dimension than degree centrality and the other three measures above. But in the I-O supplier network, betweenness centrality and degree centrality are highly correlated (with a correlation coefficient of 0.88), so important industries in the U.S. product network happen to be both ''brokers'' (measured by betweenness centrality) and ''resource aggregators'' (measured by degree centrality). Given this network structure, we expect a similar U-shaped relationship between post-buyback excess returns and betweenness centrality. Table \ref{tbl:crossallrobust} shows that the U-shaped relationship is indeed significant over all horizons. 
+
+
+\subsection{Effects of Supply-Chain Analysts on U-shaped Relationship}
+\label{sec:robustnesssupply}
+
+We further tested how centrality affects post-buyback-announcement excess returns through the channels of information processing complexity and information availability. If central firms are difficult to understand because limited-attention investors can follow only some of their trade partners, then we need to identify which central firms' stock prices incorporate more information from trade partners. Analysts' reports are an important information channel for the market.  If analysts  follow the central firm as well as its direct trade partners (supply-chain analysts), then it  is more likely that stock prices of the central firms respond faster to the news about their trade partners. In this case we expect  the information advantage of the management (relative to the market) to be smaller, everything else being equal. The same prediction applies to peripheral firms. If peripheral firms are difficult to understand because there are fewer sources of information from economic links, then more supply-chain analysts  will reduce the information advantage of the management.
+
+We computed the proportion of supply-chain analysts following firm $i$ in month $t$ by first counting the number of analysts covering both firm $i$ and firms in directly connected I-O industries and then dividing this number  by the total number of analysts following the firm. The results from double-sorting support our hypotheses: the U-shaped relationship between CAR and centrality is flatter for firms covered by more supply-chain analysts than other firms (Table \ref{tbl:abnormalallsupply}). 
+
+Some of our centrality measures are global measures (e.g., eigenvector centrality), and they account for the effect of shocks from both directly and indirectly connected firms on the focal firm's stock price. Because analysts can draw information from any firms in the product network \citep{Yue2016}, analysts covering more than one industry (i.e., generalists) may help incorporate information from other industries into the focal firm. The more generalists a firm has, the more information from other industries its stock price may incorporate. Following the same logic as for supply-chain analysts, we expect that firms covered by more generalists would experience a flatter U-shaped relation between CAR and centrality than those covered by fewer generalists. The double-sorting results shown in Table \ref{tbl:abnormalallsupplygeneral} confirm this. 
+
+Interestingly, for firms covered by fewer generalists (supply-chain analysts), firms in the Q4 centrality group experience significantly negative CAR over all horizons. The 48-month CAR is \Sexpr{irats_lowNgeneral_over_Nanalyst["+48","Q4 CAR"]}$\%$ (\Sexpr{irats_lowNdirectPercent["+48","Q4 CAR"]}$\%$) with a $t$-stat of \Sexpr{irats_lowNgeneral_over_Nanalyst["+48",14]} (\Sexpr{irats_lowNdirectPercent["+48",14]}) for firms with fewer generalists (supply-chain analysts). We also observed significantly negative CAR in Q4 for larger firms (Table \ref{tbl:abnormalallsize}) and firms followed by more analysts (Table \ref{tbl:abnormalallcoverage}). It is rare to observe in the literature negative long-run excess returns after buyback announcements, so  this finding is a strong indicator that centrality is an important predictor of the potential success of market timing after buyback announcements.
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We studied the relationship between firm centrality in the product network and managers' market timing ability in the context of open-market share repurchases in the U.S. from October \Sexpr{firstyear} through December \Sexpr{lastyear}. We found a U-shaped relationship between long-run abnormal returns and firm centrality in the Input-Output (I-O) trade flow networks. To explain this phenomenon, we argue that in firms with high centrality managers may have an information advantage over market participants due to the large {\it information processing costs} outsiders face if they want to use information from the linked firms. Due to investors' limited-attention constraints, the information processing costs increase with firm centrality. On the other hand, peripheral firms are simple and there are fewer sources of information from trade partners. This lack of {\it information availability} also gives managers an information advantage in very low centrality peripheral firms. Managers are able to use this information advantage by repurchasing shares of peripheral and high centrality firms below fair value.
+
+Using double-sorting and cross-sectional regression methods, we reject the alternative explanations that peripheral firms and firms with high centrality have characteristics that have been shown in the share repurchase literature to predict long-run excess returns. Specifically, we tested whether centrality and the U shape survive after controlling for analyst coverage, volatility, idiosyncratic risk, and other measures proposed in the literature to measure the likelihood of undervaluation, such as the U-index \citep{PeyerVermaelen2009} and the EU-index \citep{Evgeniouetal2016}. Moreover, we showed that stock prices of firms followed by more supply-chain analysts or generalists incorporate more information from trade partners, and thus the effect of centrality on long-run post-buyback excess returns is smaller. So centrality seems to be an independent firm characteristic that can improve the predictability of long-term excess returns after buyback announcements. Specifically, when combining centrality with other characteristics in a CEU-index we found that an investor who invested in the firms in the top CEU-index group would have earned an average of \Sexpr{CEU_IRATStable_bb["+48",25]}$\%$ excess return in the four years after the buyback announcement.
+
+Interestingly, we found that some buyback authorization announcements are followed by economically and statistically significant negative excess returns. For example, large firms covered by more analysts in the second most central quintile (Q4) experience negative abnormal returns of \Sexpr{round(mean(c(irats_large["+48","Q4 CAR"],irats_Hcover["+48","Q4 CAR"])))}$\%$ after four years. As it is rare to find negative long-run excess returns after buyback announcements in the literature, this further supports our hypothesis that centrality is an important predictor of the potential success of market timing after buyback announcements.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% BASIC ANAlYSIS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% FIRST All TABlES
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\clearpage
+
+%Table 1. Summary Statistics of Supplier Networks. 
+%o	Columns: (1997, 2002, 2007) * (mean, median, number of I-Os)  
+%o	Rows: four centrality measures, raw value (eigenvector, kb, degree, strength) 
+%o	Panels: all I-O, I-O with data in CRSP, I-O with filtered open-market share repurchases. 
+
+ \scriptsize
+ \begin{landscape} 
+ \begin{table}[!htb] 
+  \setlength\tabcolsep{1pt} 
+ \centering 
+ \captionof{table}{ Summary Statistics of I-O Industry Centrality in the Supplier Networks. } 
+{\scriptsize \singlespacing Supplier networks were constructed with the Input-Output tables at the detailed level from the U.S. BEA in 1997, 2002, and 2007. Eigenvector centrality and K-B centrality were calculated from the symmetric supplier network of all industry pairs. Degree centrality, strength centrality, betweenness centrality, average shorted path, and maximum shorted path were all measured using the substantial connections in each I-O network. A substantial connection is defined as a connection where one industry supplies at least 1$\%$ of the total inputs of the connected industry. Panel A reports summary statistics of all industries in each I-O network; Panel B reports summary statistics of I-O industries with observations in the CRSP/Compustat Merged database. Panel C reports summary statistics of I-O industries in the final sample of buyback announcements (satisfying all filters stated in the text). }
+ \vspace{.2in} 
+  \tiny
+\begin{tabular}{l@{\hspace{6pt}} *{22}{c}}
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   & \multicolumn{6}{c}{\scshape\small  I-O Supplier Network 1997} & \hspace{0.25in} & \multicolumn{6}{c}{\scshape\small I-O Supplier Network 2002} & \hspace{0.25in} & \multicolumn{6}{c}{\scshape\small I-O Supplier Network 2007} \\ 
+	   \cline{2-7} \cline{9-14} \cline{16-21}
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   \multicolumn{21}{c}{\bfseries Panel A: All I-O Industries in the Network} \\
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   & mean & median & min & max & sd & N & & mean & median & min & max & sd & N &  & mean & median & min & max & sd & N \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Degree} & 23.08 & 16 & 2 & 443 & 34.45 & 470 &  & 24.5 & 17 & 5 & 372 & 32.83 & 410 &  & 24.1 & 18 & 4 & 338 & 29.41 & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+    	 \textbf{Strength} & 0.00 & 0.00 & 0.00 & 0.06 & 0.00 & 470 &  & 0.00 & 0.00 & 0.00 & 0.05 & 0.00 & 410 &   & 0.00 & 0.00 & 0.00 & 0.05 & 0.00 & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{K-B} & 3.76 & 3.28 & 0 & 29.77 & 2.03 & 470 &   & 4.62 & 4.01 & 0 & 40.14 & 2.71 & 410 &   & 4.61 & 3.80 & 0 & 32.39 & 3.02 & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Eigenvector} & 0.04 & 0.03 & 0.01 & 0.42 & 0.03 & 470 &   & 0.04 & 0.04 & 0.01 & 0.39 & 0.03 & 410 &   & 0.04 & 0.04 & 0.01 & 0.38 & 0.03 & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Betweenness} & 0.00 & 0.00 & 0 & 0.32 & 0.02 & 470 &   & 0.00 & 0.00 & 0 & 0.26 & 0.02 & 410 &   & 0.00 & 0.00 & 0 & 0.30 & 0.02 & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Avg. shortest path} & 1.97 & 1.97 & 1.05 & 2.65 & 0.10 & 470 &   & 1.95 & 1.96 & 1.09 & 2.36 & 0.09 & 410 &   & 1.96 & 1.96 & 1.08 & 2.57 & 0.12 & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Max shortest path} &  &  &  & 3 &  & 470 &  &  &  &  & 3 &  & 410 &  &  &  &  & 3 &  & 368 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   \multicolumn{21}{c}{\bfseries Panel B: I-O Industries with Observations in CRSP/Compustat Merged} \\
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   & mean & median & min & max & sd & N &  & mean & median & min & max & sd & N &  & mean & median & min & max & sd & N \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Degree} & 23.13 & 16 & 2 & 443 & 30.99 & 420 &   & 24.47 & 17 & 5 & 372 & 29.62 & 363 &   & 23.98 & 18 & 4 & 338 & 26.28 & 331 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Strength} & 0.00 & 0.00 & 0.00 & 0.06 & 0.00 & 420 &   & 0.00 & 0.00 & 0.00 & 0.05 & 0.00 & 363 &   & 0.00 & 0.00 & 0.00 & 0.05 & 0.00 & 331 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{K-B} & 3.75 & 3.28 & 0 & 14.85 & 1.71 & 420 &   & 4.65 & 4.02 & 2.08 & 40.14 & 2.82 & 363 &   & 4.58 & 3.79 & 0 & 32.39 & 2.89 & 331 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Eigenvector} & 0.04 & 0.03 & 0.01 & 0.42 & 0.03 & 420 &   & 0.04 & 0.04 & 0.01 & 0.35 & 0.03 & 363 &   & 0.04 & 0.04 & 0.01 & 0.38 & 0.03 & 331 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Betweenness} & 0.00 & 0.00 & 0 & 0.32 & 0.02 & 420 &   & 0.00 & 0.00 & 0 & 0.26 & 0.01 & 363 &   & 0.00 & 0.00 & 0 & 0.30 & 0.02 & 331 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   \multicolumn{21}{c}{\bfseries Panel C: I-O Industries with Buyback  Events in the Final Sample} \\
+	   &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+	   & mean & median & min & max & sd & N &  & mean & median & min & max & sd & N &  & mean & median & min & max & sd & N \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Degree} & 24.06 & 17 & 2 & 294 & 26.20 & 307 &   & 27.13 & 17 & 5 & 372 & 34.11 & 231 &   & 23.91 & 18 & 4 & 215 & 21.04 & 270 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Strength} & 0.00 & 0.00 & 0.00 & 0.02 & 0.00 & 307 &   & 0.00 & 0.00 & 0.00 & 0.05 & 0.00 & 231 &   & 0.00 & 0.00 & 0.00 & 0.02 & 0.00 & 270 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{K-B} & 3.86 & 3.28 & 1.79 & 14.85 & 1.91 & 307 &   & 4.78 & 3.99 & 2.08 & 40.14 & 3.29 & 231 &   & 4.64 & 3.79 & 1.91 & 32.39 & 3.07 & 270 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Eigenvector} & 0.04 & 0.03 & 0.01 & 0.16 & 0.02 & 307 &   & 0.04 & 0.04 & 0.01 & 0.35 & 0.03 & 231 &   & 0.04 & 0.04 & 0.01 & 0.27 & 0.03 & 270 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+	 \textbf{Betweenness} & 0.00 & 0.00 & 0 & 0.10 & 0.01 & 307 &   & 0.00 & 0.00 & 0 & 0.26 & 0.02 & 231 &   & 0.00 & 0.00 & 0 & 0.09 & 0.01 & 270 \\ \cline{2-7} \cline{9-14} \cline{16-21}
+\end{tabular} 
+\label{tbl:IOsummary} 
+ \end{table} 
+ \end{landscape} 
+
+ \clearpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% TABLE 2:
+%%% IOsummaryTable.xlsx (Panel A: Top 20 Most Central Industries in the Supplier Network)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+ \scriptsize
+ \begin{table}[!htb] 
+  \setlength\tabcolsep{1pt}
+ \centering 
+ \captionof{table}{Most Central Industries in I-O Supplier Networks.} 
+ {\scriptsize \singlespacing The top 15 most central industries in every Input-Output supplier network. Supplier networks are constructed with the Input-Output tables at the detailed level from the U.S. BEA in 1997, 2002, and 2007. All I-O detailed industries are ranked primarily by degree centrality. Degree centrality is an industry's number of inter-industry connections measured using the substantial connections in the U.S. BEA Input-Output Supplier Network at the detailed level. A substantial connection is defined as one where an industry supplies at least 1$\%$ of the total inputs of the connected industry.}
+  \vspace{.2in}
+  \tiny
+\begin{tabular}{@{\hspace{6pt}} *{4}{c}}
+	 &  &  &  \\
+	 &  &  &  \\
+	 \multicolumn{4}{c}{\scshape\small  I-O Supplier Network 1997} \\
+	 &  &  &  \\
+	Rank & Degree &  & \multicolumn{1}{l}{I-O Industry Name} \\ \hline
+	1 & 443 &  & \multicolumn{1}{l}{Wholesale trade} \\
+	2 & 408 &  & \multicolumn{1}{l}{Management of companies and enterprises} \\ 
+	3 & 294 &  & \multicolumn{1}{l}{Truck transportation} \\
+	4 & 181 &  & \multicolumn{1}{l}{Power generation and supply} \\
+	5 & 147 &  & \multicolumn{1}{l}{Real estate} \\
+	6 & 140 &  & \multicolumn{1}{l}{Iron and steel mills} \\
+    	7 & 135 &  & \multicolumn{1}{l}{Paperboard container manufacturing} \\
+	8 & 108 &  & \multicolumn{1}{l}{Plastics plumbing fixtures and all other plastics products} \\
+	9 & 99 &  & \multicolumn{1}{l}{Monetary authorities and depository credit intermediation} \\
+	10 & 84 &  & \multicolumn{1}{l}{Lessors of nonfinancial intangible assets} \\
+	11 & 80 &  & \multicolumn{1}{l}{Other basic organic chemical manufacturing} \\
+	12 & 78 &  & \multicolumn{1}{l}{Scientific research and development services} \\
+	13 & 76 &  & \multicolumn{1}{l}{Plastics packaging materials, film and sheet} \\
+	14 & 75 &  & \multicolumn{1}{l}{Telecommunications} \\
+	15 & 73 &  & \multicolumn{1}{l}{Petroleum refineries} \\ 
+	&  &  & \\
+	&  &  & \\
+	\multicolumn{4}{c}{\scshape\small I-O Supplier Network 2002} \\
+	 &  &  &  \\
+	Rank & Degree & & \multicolumn{1}{l}{I-O Industry Name} \\ \hline
+	1 & 372 &  & \multicolumn{1}{l}{Wholesale trade} \\
+	2 & 367 &  & \multicolumn{1}{l}{Management of companies and enterprises} \\ 
+	3 & 226 &  & \multicolumn{1}{l}{Truck transportation} \\
+	4 & 204 &  & \multicolumn{1}{l}{Real estate} \\
+	5 & 178 &  & \multicolumn{1}{l}{Electric power generation, transmission, and distribution} \\
+	6 & 130 &  & \multicolumn{1}{l}{Monetary authorities and depository credit intermediation} \\
+    	7 & 101 &  & \multicolumn{1}{l}{Iron and steel mills and ferroalloy manufacturing} \\
+	8 & 100 &  & \multicolumn{1}{l}{Lessors of non-financial intangible assets} \\
+	9 & 99 &  & \multicolumn{1}{l}{Other plastics product manufacturing} \\
+	10 & 96 &  & \multicolumn{1}{l}{Paperboard container manufacturing} \\
+	11 & 86 &  & \multicolumn{1}{l}{Telecommunications} \\
+	12 & 82 &  & \multicolumn{1}{l}{Employment services} \\
+	13 & 80 &  & \multicolumn{1}{l}{Semiconductor and related device manufacturing} \\
+	14 & 74 &  & \multicolumn{1}{l}{Scientific research and development services} \\
+	15 & 73 &  & \multicolumn{1}{l}{Plastics packaging materials \& unlaminated film \& sheet manuf.} \\ 
+	&  &  & \\
+	&  &  & \\
+	\multicolumn{4}{c}{\scshape\small I-O Supplier Network 2007} \\
+	 &  &  &  \\
+	Rank & Degree & & \multicolumn{1}{l}{I-O Industry Name} \\ \hline
+	1 & 338 &  & \multicolumn{1}{l}{Wholesale trade} \\
+	2 & 314 &  & \multicolumn{1}{l}{Management of companies and enterprises} \\ 
+	3 & 215 &  & \multicolumn{1}{l}{Truck transportation} \\
+	4 & 115 &  & \multicolumn{1}{l}{Real estate} \\
+	5 & 112 &  & \multicolumn{1}{l}{Iron and steel mills and ferroalloy manufacturing} \\
+	6 & 92 &  & \multicolumn{1}{l}{Electric power generation, transmission, and distribution} \\
+    	7 & 92 &  & \multicolumn{1}{l}{Monetary authorities and depository credit intermediation} \\
+	8 & 80 &  & \multicolumn{1}{l}{Petroleum refineries} \\
+	9 & 79 &  & \multicolumn{1}{l}{Paperboard container manufacturing} \\
+	10 & 78 &  & \multicolumn{1}{l}{Lessors of non-financial intangible assets} \\
+	11 & 78 &  & \multicolumn{1}{l}{Architectural, engineering, and related services} \\
+	12 & 78 &  & \multicolumn{1}{l}{Insurance carriers} \\
+	13 & 75 &  & \multicolumn{1}{l}{Other plastics product manufacturing} \\
+	14 & 74 &  & \multicolumn{1}{l}{Turned product and screw, nut, and bolt manufacturing} \\
+	15 & 74 &  & \multicolumn{1}{l}{Legal services} \\ 
+\end{tabular} 
+\label{tbl:IOtablesPanelA} 
+ \end{table}
+
+\clearpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% TABLE 3:
+%%% IOtablesTable.xlsx (Panel B: Top 15 least Central Industries in the Supplier Network)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+ \scriptsize
+ \begin{table}[!htb] 
+  \setlength\tabcolsep{1pt} 
+ \centering 
+ \captionof{table}{Least Central Industries in I-O Supplier Networks.} 
+ {\scriptsize \singlespacing The bottom 15 least central industries in every Input-Output supplier network. Supplier networks are constructed with the Input-Output tables at the detailed level from the U.S. BEA in 1997, 2002, and 2007. All I-O detailed industries are ranked primarily by degree centrality. Degree centrality is an industry's number of inter-industry connections measured using the substantial connections in the U.S. BEA Input-Output Supplier Network at the detailed level. A substantial connection is defined as one where an industry supplies at least 1$\%$ of the total inputs of the connected industry. }
+ \vspace{.2in} 
+ \tiny
+\begin{tabular}{@{\hspace{6pt}} *{4}{c}}
+	 &  &  &  \\
+	 &  &  &  \\
+	 &  &  &  \\
+	 \multicolumn{4}{c}{\scshape\small  I-O Supplier Network 1997} \\
+	 &  &  &  \\
+	Rank & Degree &  & \multicolumn{1}{l}{I-O Industry Name} \\ \hline
+	456 & 8 &  & \multicolumn{1}{l}{Insurance agencies, brokerages, and related} \\
+	457 & 8 &  & \multicolumn{1}{l}{Offices of physicians, dentists,  \& other health practitioners} \\
+	458 & 7 &  & \multicolumn{1}{l}{Stationery and related product manufacturing} \\
+	459 & 7 &  & \multicolumn{1}{l}{Envelope manufacturing} \\
+	460 & 7 &  & \multicolumn{1}{l}{Vitreous china and earthenware articles manufacturing} \\
+	461 & 7 &  & \multicolumn{1}{l}{Funds, trusts, and other financial vehicles} \\
+	462 & 7 &  & \multicolumn{1}{l}{Home health care services} \\
+	463 & 7 &  & \multicolumn{1}{l}{Spectator sports} \\
+	464 & 6 &  & \multicolumn{1}{l}{Hunting and trapping} \\
+	465 & 6 &  & \multicolumn{1}{l}{Investigation and security services} \\
+	466 & 5 &  & \multicolumn{1}{l}{Nursing and residential care facilities} \\
+	467 & 5 &  & \multicolumn{1}{l}{Facilities support services} \\
+	468 & 3 &  & \multicolumn{1}{l}{Colleges, universities, and junior colleges} \\
+	469 & 2 &  & \multicolumn{1}{l}{Elementary and secondary schools} \\
+	470 & 2 &  & \multicolumn{1}{l}{Religious organizations} \\ \hline
+	&  &  & \\
+	&  &  & \\
+	&  &  & \\
+	\multicolumn{4}{c}{\scshape\small I-O Supplier Network 2002} \\
+	 &  &  &  \\
+	Rank & Degree & & \multicolumn{1}{l}{I-O Industry Name} \\ \hline
+	396 & 9 &  & \multicolumn{1}{l}{Dental laboratories} \\
+	397 & 9 &  & \multicolumn{1}{l}{Hospitals} \\
+	398 & 9 &  & \multicolumn{1}{l}{Junior colleges, colleges, universities, and professional schools} \\
+	399 & 9 &  & \multicolumn{1}{l}{Spectator sports} \\
+	400 & 9 &  & \multicolumn{1}{l}{Religious organizations} \\
+	401 & 8 &  & \multicolumn{1}{l}{Video tape and disc rental} \\
+	402 & 8 &  & \multicolumn{1}{l}{Biological product (except diagnostic) manufacturing} \\
+	403 & 8 &  & \multicolumn{1}{l}{Industrial process furnace and oven manufacturing} \\
+	404 & 8 &  & \multicolumn{1}{l}{Support activities for printing} \\
+	405 & 8 &  & \multicolumn{1}{l}{Museums, historical sites, zoos, and parks} \\
+	406 & 7 &  & \multicolumn{1}{l}{Leather and hide tanning and finishing} \\
+	407 & 7 &  & \multicolumn{1}{l}{Home health care services} \\
+	408 & 6 &  & \multicolumn{1}{l}{Other amusement and recreation industries} \\
+	409 & 5 &  & \multicolumn{1}{l}{Propulsion units and parts for space vehicles \& guided missiles} \\
+	410 & 5 &  & \multicolumn{1}{l}{Elementary and secondary schools} \\ \hline
+	&  &  & \\
+	&  &  & \\
+	&  &  & \\
+	\multicolumn{4}{c}{\scshape\small I-O Supplier Network 2007} \\
+	 &  &  &  \\
+	Rank & Degree & & \multicolumn{1}{l}{I-O Industry Name} \\ \hline
+	354 & 7 &  & \multicolumn{1}{l}{Commercial and industrial machinery and equipment repair and maintenance} \\
+	355 & 7 &  & \multicolumn{1}{l}{Guided missile and space vehicle manufacturing} \\
+	356 & 7 &  & \multicolumn{1}{l}{Spectator sports} \\
+	357 & 7 &  & \multicolumn{1}{l}{Grantmaking, giving, and social advocacy organizations} \\
+	358 & 6 &  & \multicolumn{1}{l}{Death care services} \\
+	359 & 6 &  & \multicolumn{1}{l}{Custom computer programming services} \\
+	360 & 6 &  & \multicolumn{1}{l}{Propulsion units \& parts for space vehicles and guided missiles} \\
+	361 & 6 &  & \multicolumn{1}{l}{Office administrative services} \\
+	362 & 5 &  & \multicolumn{1}{l}{Funds, trusts, and other financial vehicles} \\
+	363 & 5 &  & \multicolumn{1}{l}{Investigation and security services} \\
+	364 & 5 &  & \multicolumn{1}{l}{Individual and family services} \\
+	365 & 5 &  & \multicolumn{1}{l}{Residential mental retardation,  mental health, substance abuse and other facilities} \\
+	366 & 5 &  & \multicolumn{1}{l}{Elementary and secondary schools} \\
+	367 & 5 &  & \multicolumn{1}{l}{Civic, social, professional, and similar organizations} \\
+	368 & 4 &  & \multicolumn{1}{l}{Junior colleges, colleges, universities, and professional schools} \\ \hline
+\end{tabular} 
+\label{tbl:IOtablesPanelB} 
+ \end{table}
+
+\clearpage
+%Table 2: IRATS: three- and five-factor, all events. (+ difference significane: Q1 vs. Q3 vs. Q5) 
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_all_3f[reported_times,],
+  irats_all[reported_times,],
+  columns = colnames(irats_all)[c(1,4,7,10,13,16,19,22)],
+  title="Firm Centrality and IRATS Cumulative Abnormal Returns (CAR) after Repurchase Announcements",
+  title1 = "Panel A: 3-Factor IRATS Cumulative Abnormal Returns",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns",
+  caption="The table presents the long-run IRATS Cumulative Abnormal Returns (CAR) for firms repurchase announcements using the three-factor (Panel~A) and five-factor (Panel~B) Fama-French models. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The three-factor model does not use factors ${RMW}_t$ and ${CMA}_t$. The numbers reported are sums of the intercepts of cross-sectional regressions over the relevant event-time-periods expressed in percentage terms. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallirats",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+@
+
+
+
+\clearpage
+
+%Table 3: Calendar Equal-weight: three- and five-factor, all events. (+ difference significane: Q1 vs. Q3 vs. Q5)
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  calendar_all_3f[reported_times,],
+  calendar_all[reported_times,],
+  columns = colnames(calendar_all)[c(1,4,7,10,13,16,19,22)],
+  title="Calendar Time Monthly Abnormal Returs (AR) after Repurchase Announcements",
+  title1 = "Panel B: 3-Factor Calendar Time Method Monthly Abnormal Returns",
+  title2 = "Panel B: 5-Factor Calendar Time Method Monthly Abnormal Returns",
+  caption="The table presents the Calendar Time monthly Abnormal Returns (AR) for firms repurchase announcements using the three-factor (Panel~A) and five-factor (Panel~B) Fama-French models.  In this method, event firms that have announced an open market buyback in the last calendar months form the basis of the calendar month portfolio. A single time-series regression is run with the excess returns of the calendar portfolio as the dependent variable and the returns of factors used as the independent variables. The following regression is used for the five-factor model:
+\\begin{eqnarray*}
+(R_{t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{t}$ is the monthly return on the constructed portfolio in the calendar month $t$. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The three-factor model does not use factors ${RMW}_t$ and ${CMA}_t$.  The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallcal",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "AR",
+metric2 = "AR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+@
+
+\clearpage
+
+%Table 4: Relation between Firm Characteristics and Centrality.  
+%o	Columns = firm characteristics score: eigen2, degree1; ME, analyst coverage, (1-R2), volatility, ivol, prior returns, BE/ME, U, EU. 
+%o	Rows: 1st row is mean score of all Buyback Events (2nd row is t-stat of mean score of buyback events == 0.5); + next five rows: mean score by centrality group (Q1-Q5). 
+
+<<  eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+# Relations between centrality and other variables
+tmp =   centrality_var_relations[,c("Degree","Volatility","(1-R2)","Market-Beta","Analyst-Cov.","Size","Prior-Returns","BE/ME", "U-index","EU-index")]
+colnames(tmp) <- c("Centrality","Volatility","(1-R2)","Market Beta","Analyst Cov.","Market Cap.","Prior Returns","BE/ME", "U-index","EU-index")
+tmp[2,9:10] <- NA
+latex_render_data_frame(
+  tmp, 
+  title = "Relation between Firm Characteristics and Centrality.",
+  caption="Average values of firm characteristics in the final sample of buyback events (first row) and the $p$-value for their difference from 0.5 (second row), as well as the average values in each centrality quintile group ($3^{rd}$-$7^{th}$ rows) and comparisons across centrality sub-groups (last two rows). All buyback events are ranked by Degree Centrality Score and then assigned into one of five quintile groups: Q1 indicates the least central group; Q2, Q3, and Q4 indicate increasing centrality; and Q5 indicates the most central group.  Degree centrality is an industry's number of inter-industry connections and is measured using the substantial connections in the U.S. BEA Input-Output Supplier Network at the detailed level. A substantial connection is defined as a connection where one industry supplies at least 1$\\%$ of the total inputs of the connected industry. All variables, except U-index and EU-index, are standardized scores ranging from 0 to 1, and the scores are calculated across all firms in the CRSP universe in the same calendar month. ",
+  label = "tbl:centrOther",
+  columns=NUll,
+  bigtitleontop = T,
+  show_rownames=TRUE,
+  scale = 1,
+  digits=2,
+  lastSpecial=F,dorotate=T
+)
+
+@
+
+\clearpage
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_small[reported_times,],
+  irats_large[reported_times,],
+  columns = colnames(irats_small)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Small versus large Firms",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: Small (below median)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: large (above median)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms whose Market Capitalization (cross-sectional) score is below the median score of all events. Panel~B reports the results for firms whose Market Capitalization (cross-sectional) score is above the median score of all events. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallsize",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  printLatexTable2(
+    calendar_small[reported_times,],
+    calendar_large[reported_times,],
+    columns = colnames(calendar_small)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor IRATS: 2-sort: Size",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: Small (below median)",
+    title2 = "Panel B: 5-Factor calendar Abnormal Returns: large (above median)",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+\clearpage
+
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_Lcover[reported_times,],
+  irats_Hcover[reported_times,],
+  columns = colnames(irats_Lcover)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x (Analyst Coverage)",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low Analyst Coverage (below median)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High Analyst Coverage (above median)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms whose Analyst Coverage (cross-sectional) score is below the median score of all events. Panel~B reports the results for firms whose Analyst Coverage (cross-sectional) score is above the median score of all events. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallcoverage",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  printLatexTable2(
+    calendar_Lcover[reported_times,],
+    calendar_Hcover[reported_times,],
+    columns = colnames(calendar_Lcover)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor IRATS: 2-sort: centrality x (Analyst Coverage)",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: low Analyst Coverage (below median)",
+    title2 = "Panel B: 5-Factor calendar Abnormal Returns: High Analyst Coverage (above median)",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+\clearpage
+
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_lowMr2[reported_times,],
+  irats_highMr2[reported_times,],
+  columns = colnames(irats_highMr2)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x (Idiosyncratic Risk)",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low Idiosyncratic Risk",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High Idiosyncratic Risk",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms whose Idiosyncratic Risk (cross-sectional) score is below the median score of all events. Panel~B reports the results for firms whose Idiosyncratic Risk (cross-sectional) score is above the median score of all events. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallidio",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  
+  printLatexTable2(
+    calendar_lowMr2[reported_times,],
+    calendar_highMr2[reported_times,],
+    columns = colnames(calendar_lowMr2)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor Calendar: 2-sort: centrality x (1-R2)",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: low (1-R2)",
+    title2 = "Panel B: 5-Factor calendar Abnormal Returns: High (1-R2)",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+\clearpage
+
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_Lvol[reported_times,],
+  irats_Hvol[reported_times,],
+  columns = colnames(irats_Lvol)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x Volatility",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low Volatility (below median)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High Volatility (above median)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms whose Volatility (cross-sectional) score is below the median score of all events. Panel~B reports the results for firms whose Volatility (cross-sectional) score is above the median score of all events. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallvol",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  printLatexTable2(
+    calendar_Lvol[reported_times,],
+    calendar_Hvol[reported_times,],
+    columns = colnames(calendar_Lvol)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor IRATS: 2-sort: centrality x Volatility",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: low Volatility (below median)",
+    title2 = "Panel B: 5-Factor calendar Abnormal Returns: High Volatility (above median)",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+\clearpage
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_Luindex[reported_times,],
+  irats_Huindex[reported_times,],
+  columns = colnames(irats_Luindex)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x U-index",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low U-index (lower than 6)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High U-index (greater than 10)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms with high U-index (larger than 10). Panel~B reports the results for firms with low U-index (smaller than 6). The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalalluindex",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  printLatexTable2(
+    calendar_luindex[reported_times,],
+    calendar_Huindex[reported_times,],
+    columns = colnames(calendar_luindex)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor calendar Abnormal Returns: 2-sort: centrality x U-index",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: low (U-index  $<$ 6)",
+    title2 = "Panel B: 5-Factor calendar Abnormal Returns: High (U-index  $>$ 10)",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+\clearpage
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_Leu[reported_times,],
+  irats_Heu[reported_times,],
+  columns = colnames(irats_Leu)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x EU-index",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low EU-index (lower than 2)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High EU-index (greater than 3)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms with high EU-index (larger than 3). Panel~B reports the results for firms with low EU-index (smaller than 2). The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalalleuindex",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  printLatexTable2(
+    calendar_leu[reported_times,],
+    calendar_Heu[reported_times,],
+    columns = colnames(calendar_leu)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor IRATS: 2-sort: centrality x EU-index",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: low (EU-index  $<$ 2)",
+    title2 = "Panel A: 5-Factor calendar Abnormal Returns: High (EU-index $>$ 3)",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+
+\clearpage
+
+
+
+
+\clearpage
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+tmp = BSC1998_individual_regression
+tmp = tmp[-which(rownames(tmp) == "CentralityLinear"),]
+rownames(tmp) <- c("Size Score", "BE/ME Score", "Prior Returns Score", "U-index", "EU-index", "Volatility",
+                   "$(1-R^2)$", "Analyst Coverage Score","Centrality (Linear term)", "Centrality (Square term)", "Observations")
+printLatexTable(
+  BSC1998_individual_regression,
+  columns = colnames(BSC1998_individual_regression)[c(1,4,7,10)],
+  title="Cross-Section Regressions: Univariate Analysis (one company feature per regression).",
+  caption="Monthly average coefficients of each firm characteristic estimated with the cross-section analysis following Brennan, Chordia and Subrahmanyam (1998). The five-factor Fama-French model is used to estimate the factor loadings for each stock in every month and, thus, monthly excess returns. Regressing monthly excess returns on each firm characteristic in every post-buyback-announcement month gives the monthly coefficients. Centrality and centrality squared terms are in one regression. Coefficients reported in this table are the average of monthly coefficient estimates over the corresponding post-event window. The standard error (denominator of the $t$-statistic) for a window is the standard deviation of the monthly estimated coefficients divided by the square root of the number of months in the window. The significance levels are indicated by +, *, and ** and correspond to a significance level of 10$\\%$, 5$\\%$, and 1$\\%$ respectively, using a two-tailed test.",
+  label = "tbl:crossindi",
+  titleontop=T,
+  metric = "Month",
+  scale=1,
+  lastSpecial=T
+)
+@
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+rownames(BSC1998_completemodel) <- c("Intercept", "U-index",  "Volatility",
+                   "$(1-R^2)$", "Analyst Coverage Score","Centrality (Linear term)", "Centrality (Square term)", "Observations")
+printLatexTable(
+  BSC1998_completemodel,
+  columns = colnames(BSC1998_completemodel)[c(1,4,7,10)],
+  title="Cross-Section Regressions: Multivariate Analysis (all variables in one regression, including U-index).",
+  caption="Monthly average coefficients of each firm characteristic estimated with the cross-section analysis following Brennan, Chordia and Subrahmanyam (1998). The five-factor Fama-French model is used to estimate the factor loadings for each stock in every month and, thus, monthly excess returns. Regressing monthly excess returns on all firm characteristics in every post-buyback-announcement month gives the monthly coefficients. The firm characteristics are centrality, centrality squared term, U-index, volatility, $(1-R^2)$, and analyst coverage. Coefficients reported in this table are the average of monthly coefficient estimates over the corresponding post-event window. The standard error (denominator of the $t$-statistic) for a window is the standard deviation of the monthly estimated coefficients divided by the square root of the number of months in the window. The significance levels are indicated by +, *, and ** and correspond to a significance level of 10$\\%$, 5$\\%$, and 1$\\%$ respectively, using a two-tailed test.",
+  label = "tbl:crossall",
+  titleontop=T,
+  metric = "Month",
+  scale=1,
+  lastSpecial=T
+)
+@
+
+\clearpage
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+rownames(BSC1998_completemodel_decompose) <- c("Intercept", "Size Score", "BE/ME Score", "Prior Returns Score",  "Volatility",
+                   "$(1-R^2)$", "Analyst Coverage Score","Centrality (Linear term)", "Centrality (Square term)", "Observations")
+printLatexTable(
+  BSC1998_completemodel_decompose,
+  columns = colnames(BSC1998_completemodel_decompose)[c(1,4,7,10)],
+  title="Cross-Section Regressions: Multivariate Analysis (all variables in one regression, including components of U-index).",
+  caption="Monthly average coefficients of each firm characteristic estimated with the cross-section analysis following Brennan, Chordia and Subrahmanyam (1998). The five-factor Fama-French model is used to estimate the factor loadings for each stock in every month and, thus, monthly excess returns. Regressing monthly excess returns on all firm characteristics in every post-buyback-announcement month gives the monthly coefficients. The firm characteristics are centrality, centrality squared term, size, book-to-market, prior returns, volatility, $(1-R^2)$, and analyst coverage. Coefficients reported in this table are the average of monthly coefficient estimates over the corresponding post-event window. The standard error (denominator of the $t$-statistic) for a window is the standard deviation of the monthly estimated coefficients divided by the square root of the number of months in the window. The significance levels are indicated by +, *, and ** and correspond to a significance level of 10$\\%$, 5$\\%$, and 1$\\%$ respectively, using a two-tailed test.",
+  label = "tbl:crossalldecomp",
+  titleontop=T,
+  metric = "Month",
+  scale=1,
+  lastSpecial=T
+)
+@
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+rownames(BSC1998_completemodel_downgraded) <- c("Intercept", "U-index",  "Volatility",
+                   "$(1-R^2)$", "Analyst Coverage Score","Centrality (Linear term)", "Centrality (Square term)", "Observations")
+rownames(BSC1998_completemodel_upgraded) <- c("Intercept", "U-index",  "Volatility",
+                   "$(1-R^2)$", "Analyst Coverage Score","Centrality (Linear term)", "Centrality (Square term)", "Observations")
+printLatexTable2(
+  BSC1998_completemodel_downgraded,
+  BSC1998_completemodel_upgraded,
+  columns = colnames(BSC1998_completemodel_downgraded)[c(1,4,7,10)],
+  title="Multivariate Cross-Section Regressions: Downgraded vs. Upgraded Events.",
+  title1 = "Panel A: All variables in one model, only Downgraded events",
+  title2 = "Panel B: All variables in one model, only Upgraded events",
+  caption="Monthly average coefficients of each firm characteristic estimated with the cross-section analysis following Brennan, Chordia and Subrahmanyam (1998), for firms experiencing analyst recommendations downgrade (Panel A) and upgrade (Panel B) in the month prior to buyback announcement. The five-factor Fama-French model is used to estimate the factor loadings for each stock in every month and, thus, monthly excess returns. Regressing monthly excess returns on all firm characteristics in every post-buyback-announcement month gives the monthly coefficients. The firm characteristics are centrality, centrality squared term, U-index, volatility, $(1-R^2)$, and analyst coverage. Coefficients reported in this table are the average of monthly coefficient estimates over the corresponding post-event window. The standard error (denominator of the $t$-statistic) for a window is the standard deviation of the monthly estimated coefficients divided by the square root of the number of months in the window. The significance levels are indicated by +, *, and ** and correspond to a significance level of 10$\\%$, 5$\\%$, and 1$\\%$ respectively, using a two-tailed test.",
+  label = "tbl:crossalldecompdown",
+  bigtitleontop=T,
+  titleontop=T,
+  metric1 = "Month",
+  metric2 = "Month",
+  scale=1,
+  lastSpecial=T
+  #dorotate=T
+)
+@
+
+
+\clearpage
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+tmp = rbind(
+  robust_results$Betweenness,rep(NA, ncol(robust_results$Strength)),
+  robust_results$Strength, rep(NA, ncol(robust_results$Strength)),
+  robust_results$Eigenvector, rep(NA, ncol(robust_results$Eigenvector)),
+  robust_results$KB
+  )
+rownames(tmp)[which(rownames(tmp) == "UIndex")] <- "U-index"
+rownames(tmp)[which(rownames(tmp) == "OneMRsq")] <- "$(1-R^2)$"
+rownames(tmp)[which(rownames(tmp) == "AnalystCoverage")] <- "Analyst Coverage Score"
+rownames(tmp)[6] <- "Betweenness"
+rownames(tmp)[7] <- "Betweenness Square"
+rownames(tmp)[15] <- "Strength"
+rownames(tmp)[16] <- "Strength Square"
+rownames(tmp)[24] <- "Eigenvector"
+rownames(tmp)[25] <- "Eigenvector Square"
+rownames(tmp)[33] <- "K-B"
+rownames(tmp)[34] <- "K-B Square"
+
+printLatexTable(
+  tmp,
+  columns = colnames(tmp)[c(1,4,7,10)],
+  title="Robustness Tests: Cross-Section Regressions with Different Centrality Measures.",
+  caption="Monthly average coefficients of each firm characteristic estimated with the cross-section analysis following Brennan, Chordia and Subrahmanyam (1998), with different centrality measures from the Input-Output supplier networks. Supplier networks are constructed with the Input-Output tables at the detailed level from the U.S. BEA in 1997, 2002, and 2007. Eigenvector centrality and K-B centrality are calculated from the symmetric supplier network of all industry pairs. Strength centrality and betweenness centrality are measured using the substantial connections in each I-O network. A substantial connection is defined as a connection where one industry supplies at least 1$\\%$ of the total inputs of the connected industry. The five-factor Fama-French model is used to estimate the factor loadings for each stock in every month and, thus, monthly excess returns. Regressing monthly excess returns on all firm characteristics in every post-buyback-announcement month gives the monthly coefficients. The firm characteristics are centrality, centrality squared term, U-index, volatility, $(1-R^2)$, and analyst coverage. Coefficients reported in this table are the average of monthly coefficient estimates over the corresponding post-event window. The standard error (denominator of the $t$-statistic) for a window is the standard deviation of the monthly estimated coefficients divided by the square root of the number of months in the window. The significance levels are indicated by +, *, and ** and correspond to a significance level of 10$\\%$, 5$\\%$, and 1$\\%$ respectively, using a two-tailed test.",
+  label = "tbl:crossallrobust",
+  titleontop=T,
+  metric = "Month",
+  scale=1,
+  lastSpecial=T
+)
+@
+
+\clearpage
+
+%%%%%%
+%%%%%% THE SUPPlY ANAlYSTS NOW
+%%%%%%
+
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  irats_lowNdirectPercent[reported_times,],
+  irats_highNdirectPercent[reported_times,],
+  columns = colnames(irats_Leu)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x Supply Chain Analysts",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low Supply Chain Analysts (below median)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High Supply Chain Analysts (above median)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms whose percentage of supply chain analysts (cross-sectional) score is below the median score of all events. Panel~B reports the results for firms whose percentage of supply chain analysts (cross-sectional) score is above the median score of all events. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallsupply",
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+if (0){
+  printLatexTable2(
+    calendar_lowNdirectPercent[reported_times,],
+    calendar_highNdirectPercent[reported_times,],
+    columns = colnames(calendar_leu)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor IRATS: 2-sort: centrality x Ndirect over Nanalyst",
+    title1 = "Panel A: 5-Factor calendar Abnormal Returns: low",
+    title2 = "Panel A: 5-Factor calendar Abnormal Returns: High",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "AR",
+    metric2 = "AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+
+\clearpage
+
+
+
+<<   eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+if (0){
+  printLatexTable2(
+    irats_lowNdirect_followPercent[reported_times,],
+    irats_highNdirect_followPercent[reported_times,],
+    columns = colnames(irats_Leu)[c(1,4,7,10,13,16,19,22)],
+    title="Five-factor IRATS: 2-sort: centrality x Ndirect-follow over Nanalyst",
+    title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low",
+    title2 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: High",
+    caption="",
+    #label = "tbl:abnormalall5f",
+    bigtitleontop=T,
+    titleontop=T,
+    metric1 = "CAR",
+    metric2 = "CAR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+
+printLatexTable2(
+  irats_lowNgeneral_over_Nanalyst[reported_times,],
+  irats_highNgeneral_over_Nanalyst[reported_times,],
+  columns = colnames(irats_Leu)[c(1,4,7,10,13,16,19,22)],
+  title="IRATS Cumulative Abnormal Returns after Double-sorting: Centrality x Generalist Analysts",
+  title1 = "Panel A: 5-Factor IRATS Cumulative Abnormal Returns: low Generalist Analysts (below median)",
+  title2 = "Panel B: 5-Factor IRATS Cumulative Abnormal Returns: High Generalist Analysts (above median)",
+  caption="The tables present the long-run IRATS Cumulative Abnormal Returns (CAR) for subsets of firms' repurchase announcements using the five factor Fama-French model. The tables report monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$ for the five-factor model:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors. Panel~A reports the results for firms whose percentage of generalist analysts (cross-sectional) score is below the median score of all events. Panel~B reports the results for firms whose percentage of generalist analysts (cross-sectional) score is above the median score of all events. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+label = "tbl:abnormalallsupplygeneral", 
+bigtitleontop=T,
+titleontop=T,
+metric1 = "CAR",
+metric2 = "CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+@
+
+
+\clearpage
+
+%Table 9: portfolio returns from SEU vs. EU. 
+
+
+<<  eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+printLatexTable2(
+  CEU_IRATStable_bb[reported_times,1:(3*5)],
+  CEU_IRATStable_bb[reported_times,16:(3*9)],
+  columns = c("CEU-index 0", "CEU-index 1","CEU-index 2","CEU-index 3","CEU-index 4"),
+  columns2 = c("CEU-index 5","CEU-index 6","CEU-index 7","CEU-index 8"),
+  title="Buyback announcements Calendar Time for all CEU-index Values",
+  caption="IRATS five factor cumulative abnormal returns after open market repurchase announcements for each Central Enhanced Undervaluation Index (CEU-index) value from 0 to 8. For each CEU-index value, we report the monthly cumulative average abnormal returns (CAR) in percent using the \\cite{Ibbotson1975} returns across time and security (IRATS) method combined with the \\cite{FamaFrench2015} five-factor model for the sample of firms that announced an open market share repurchase plus various subsamples. The following regression is run each event month~$j$:
+\\begin{eqnarray*}
+(R_{i,t} - R_{f,t}) &=& a_j + b_j (R_{m,t} - R_{f,t}) + c_j {SMB}_t + d_j {HMl}_t + e_t {RMW}_t + f_t {CMA}_t + \\epsilon_{i,t},
+\\end{eqnarray*}
+where $R_{i,t}$ is the monthly return on security $i$ in the calendar month $t$ that corresponds to the event month $j$, with $j = 0$ being the month of the repurchase announcement. $R_{f,t}$ and $R_{m,t}$ are the risk-free rate and the return on the equally weighted CRSP index, respectively. ${SMB}_t$, ${HMl_t}$, ${RMW}_t$, and ${CMA}_t$ are the monthly returns on the size, book-to-market factor, profitability factor and investment factor in month $t$, respectively. The numbers reported are sums of the intercepts of cross-sectional regressions over the relevant event-time-periods expressed in percentage terms. The standard error (denominator of the $t$-statistic) for a window is the square root of the sum of the squares of the monthly standard errors.",
+label = "tbl:CEUirats",
+bigtitleontop=T,
+titleontop=T,
+metric1="CAR",metric2="CAR",
+scale=1,
+lastSpecial=T,
+dorotate=T
+)
+
+@
+
+<<  eval = TRUE, echo=FALSE,message=FALSE,fig.pos='h',results='asis' >>=
+if (0){
+  printLatexTable2(
+    CEU_CAltable_bb[reported_times,1:(3*5)],
+    CEU_CAltable_bb[reported_times,16:(3*9)],
+    columns = c("CEU-index 0", "CEU-index 1","CEU-index 2","CEU-index 3","CEU-index 4"),
+    columns2 = c("CEU-index 5","CEU-index 6","CEU-index 7","CEU-index 9"),
+    title="Buyback announcements Calendar Time for all CEU-index Values",
+    caption="IRATS five factor cumulative abnormal returns after open market repurchase announcements for each Central Enhanced Undervaluation Index (CEU-index) value from 0 to 8. For each CEU-index value, we report the monthly average abnormal returns (AR) of equally weighted Calendar Time portfolios using the \\cite{FamaFrench2015} five-factor model. In this method, event firms that have announced an open market buyback in the last calendar months form the basis of the calendar month portfolio. A single time-series regression is run with the excess returns of the calendar portfolio as the dependent variable and the returns of five factors (the difference between the risk-free rate and the return on the equally weighted CRSP index, the monthly return on the size, book-to-market factor, profitability factor and investment factor in month) as the independent variables. The significance levels are indicated by +, *, and ** and correspond to a significance level of $10\\%$, $5\\%$, and $1\\%$ respectively, using a two-tailed test.",
+    label = "tbl:CEUcal", 
+    bigtitleontop=T,
+    titleontop=T,
+    metric1="AR",metric2="AR",
+    scale=1,
+    lastSpecial=T,
+    dorotate=T
+  )
+}
+@
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%XXXXXXX NOW All FIGURES
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\clearpage
+
+\begin{figure}[H]
+\centering
+<<  fig.width=8, fig.height=5, out.width='\\textwidth', echo=F >>=
+
+par(mfrow=c(1,2), mar=c(5.8,4,5.8,4))
+uplot1 <- function(a,s,x) {s*x + a*x*x}
+uplot2 <- function(b, d,x) {d*x + b*x*x*x}
+plot(sapply(1:25,function(x) uplot1(0.2, 0.2,x)), type="l", xlab = "Degree N", ylab = "Uncertainty")
+lines(sapply(1:25,function(x) uplot2(0.007, 1.7,x)), col="red")
+#plot(sapply(1:25,function(x) uplot1(0.2, 0.2,x) - uplot2(1.7, 0.007,x)), type="l", xlab = "Degree N", ylab = "Insiders' Information")
+#sum(sapply(1:25,function(x) uplot1(0.2, 0.2,x) - uplot2(1.7, 0.007,x)) > 0)
+uplot <- function(a, b, s, d,x) {b*x*x - a*x + (d-s)}
+plot(sapply(1:25,function(x) uplot(0.2, 0.007, 0.2, 1.7,x)), type="l", xlab = "Degree N", ylab = "Insiders' Information Advantage")
+
+@
+%\includegraphics[width=12cm]{ucurvemodel.png}
+\caption{Example U-curve of the relation between centrality and the information advantage of a firm's management, based on the information availability and information processing cost model in Section \ref{sec:theory}. The x-axis is the number of economic links of a firm (i.e., its centrality). The left plot shows on the y-axis the uncertainty of firm insiders (black line) and outside investors (red line),  measured as the variance of the estimate of the firm's cash flow {\it per link} by each population. The red line is always above the black line, indicating the marginal information availability advantage of the insiders. It also increases faster than the black line after some point, indicating the information processing cost disadvantage of the outside investors. The right plot shows on the y-axis a measure of information advantage of the firm's management, measured as the difference of the uncertainty of the market from that of the firm management for the total firm cash flow: the larger this difference, the larger the information advantage the firm management has. The plots are based on the example discussed in Section \ref{sec:theory}.}
+\label{fig:ucurvemodel}
+\end{figure}
+
+
+\begin{figure}[H]
+\centering
+<<  fig.width=10, fig.height=5, out.width='\\textwidth', echo=F >>=
+
+number_eventsBB = table(format(BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date[BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date >= FirstTrade], "%Y"))
+market_index = 100*(1+cumprod(1+Market_Monthly[names(Market_Monthly) >= "1996-10-01"]))
+market_index = market_index[which(str_sub(names(market_index), start = 6, end = 7)=="12")]
+names(market_index) <- str_sub(names(market_index), start = 1, end = 4)
+df.bar <- barplot(number_eventsBB,col=c("grey"),main = "Panel A: Buyback Announcements", ylab = "Announcements", xlab = "Years",las=2,space=0.5, cex.names=0.9)
+par(new = TRUE)
+plot(market_index,type="l", lwd = 1.5, axes = FALSE, xlab = "", ylab = "")
+points(market_index, pch=1,  lwd=1.5)
+axis(side=4, at = pretty(range(market_index)))
+mtext("Market Index", side=4, line=3)
+for (iter in 1:floor(max(number_eventsBB)/100))
+  abline(h = 100*iter)
+
+@
+\caption{Number of buyback announcements per year: solid line and right hand axis show the $S\&P$ index at the end of each year, starting from 100 in October 1996. Buyback activity rises prior to stock market increases and tends to fall afterwards. }
+\label{fig:liveevents}
+\end{figure}
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{centralityfigv2.png}
+\caption{
+In the adjacency matrix A of a supplier network, $a_{ij}$ represents the link strength between industries $i$ and $j$. The left graph shows the dollar values of goods flowed from $i$ to $j$ ($a_{ij} =$ \$1 million) and from $j$ to $i$ ($a_{ij} =$ \$2 million). These values are calculated from the Input-Output Make and Use tables from BEA. The middle graph shows the link strength standardized by total purchases of an industry. Industry $j$'s ($i$'s) total purchases from all other industries are \$20 million (\$100 million) in this example, so $a_{ij}$ = 5$\%$ ($a_{ij} =$ 2$\%$) which means that among all industry suppliers of $j$ ($i$), industry $i$ ($j$) accounts for 5$\%$ of $j$'s ($i$'s) total inputs. These standardized link strengths give an asymmetric matrix and hence a directed network. The right graph makes a symmetric matrix by selecting the larger number between $a_{ij}$ and $a_{ij}$. This results to an undirected network.}
+\label{fig:IOcentrality}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+<<  fig.width=10, fig.height=5, out.width='\\textwidth', echo=F >>=
+par(mfrow=c(1,2), mar=c(3,4,3,4))
+
+tmp = irats_all["+48",c(4, 7, 10, 13, 16)]
+plot(tmp, axes=FALSE, type = "l", ylab = "CAR", xlab="Quantile",main="Panel A: Buybacks IRATS CAR and Centrality", lwd=1.4)
+axis(1,at=1:length(tmp),labels=paste("Q",1:length(tmp), sep=""),cex.axis=1,las=3)
+axis(2,cex.axis=1.1)
+
+tmp = calendar_all["+48",c(4, 7, 10, 13, 16)]
+plot(tmp, axes=FALSE, type = "l", ylab = "Monthly AR", xlab="Quantile",main="Panel B: Buybacks Calendar Time AR and Centrality", lwd=1.4)
+axis(1,at=1:length(tmp),labels=paste("Q",1:length(tmp), sep=""),cex.axis=1,las=3)
+axis(2,cex.axis=1.1)
+
+rm("tmp")
+@
+\caption{Long-run IRATS Cumulative Excess Returns (left) and Calendar Monthly Abnormal Returns (Right) for different subgroups of firms defined according to firm centrality: Q1 is the bottom and Q5 the top quantile of firms in terms of their centrality score one month prior to the repurchase announcement. Centrality Score is constructed with degree centrality.}
+\label{fig:centrality}
+\end{figure}
+
+
+\begin{figure}[H]
+\centering
+<<  fig.width=10, fig.height=5, out.width='\\textwidth', echo=F >>=
+tmp = table(BUYBACK_DATA_NETWORK$CEU_index)
+tmp = structure(as.numeric(tmp), .Names = names(tmp))
+barplot(tmp,main = "", ylab = "Number of Events", xlab = "",las=2,space=0.5, cex.names=1)
+rm("tmp")
+@
+\caption{Distribution of the CEU-index of all buyback events.}
+\label{fig:undervaluationindex}
+\end{figure}
+
+\clearpage
+
+
+\begin{figure}[H]
+\centering
+<<  fig.width=10, fig.height=5, out.width='\\textwidth', echo=F >>=
+
+IRATS_table_all_bb_plot = CEU_IRATStable_bb
+IRATS_table_all_bb_plot[rownames(IRATS_table_all_bb_plot) %in% as.character((-6):(-1)),which(colnames(IRATS_table_all_bb_plot)=="CAR")] <- -IRATS_table_all_bb_plot[rownames(IRATS_table_all_bb_plot) %in% as.character((-6):(-1)),which(colnames(IRATS_table_all_bb_plot)=="CAR")] 
+
+ylimit = c(min(as.vector(IRATS_table_all_bb_plot[reported_times_plots,which(colnames(IRATS_table_all_bb_plot)=="CAR")])), max(as.vector(IRATS_table_all_bb_plot[reported_times_plots,which(colnames(IRATS_table_all_bb_plot)=="CAR")])))
+
+plot(IRATS_table_all_bb_plot[reported_times_plots,3*8+1], ylim = ylimit,axes=FALSE, type = "l", ylab = "CAR", xlab="Months",main="Buybacks - CEU-index", lwd=2, lty = "solid")
+axis(1,at=plot_tickers,labels=plot_xlabels,cex.axis=1,las=3)
+axis(2,cex.axis=1.1)
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,1],lwd = 2, lty="dotted")
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*1+1],lwd = 2, lty="dotted")
+tmp = IRATS_table_all_bb_plot[reported_times_plots,3*1+1]
+tmp[c(3*(1:floor(length(tmp)/3)),3*(1:floor(length(tmp)/3))+1)] <- NA
+points(tmp, pch=23,lwd=1)
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*2+1],lwd = 2, lty="dashed")
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*3+1],lwd = 2, lty="dashed")
+tmp = IRATS_table_all_bb_plot[reported_times_plots,3*3+1]
+tmp[c(3*(1:floor(length(tmp)/3)),3*(1:floor(length(tmp)/3))+1)] <- NA
+points(tmp, pch=23,lwd=1)
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*4+1],lwd = 2, lty="dotdash")
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*5+1],lwd = 2, lty="solid")
+tmp = IRATS_table_all_bb_plot[reported_times_plots,3*5+1]
+tmp[c(3*(1:floor(length(tmp)/3)),3*(1:floor(length(tmp)/3))+1)] <- NA
+points(tmp, pch=23,lwd=1)
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*6+1],lwd = 2, lty="solid")
+tmp = IRATS_table_all_bb_plot[reported_times_plots,3*6+1]
+tmp[c(3*(1:floor(length(tmp)/3)),3*(1:floor(length(tmp)/3))+1)] <- NA
+points(tmp, pch=20,lwd=1)
+
+lines(IRATS_table_all_bb_plot[reported_times_plots,3*7+1],lwd = 2, lty="dotted")
+tmp = IRATS_table_all_bb_plot[reported_times_plots,3*7+1]
+tmp[c(3*(1:floor(length(tmp)/3)),3*(1:floor(length(tmp)/3))+1)] <- NA
+points(tmp, pch=20,lwd=1)
+
+abline(v=which(reported_times_plots == "0"), lwd=0.5)
+abline(h=0, lwd=0.5)
+
+
+legend(x="topleft",
+       title="CEU-index value",
+       legend = c("8","7","6","5","4","3","2","1","0"),
+       lty=c("solid","dashed","solid","solid","dotdash","dashed","dashed","dotted","dotted"),
+       lwd=c(2,2,2,2,2,2,2,2),
+       pch=c(NaN,20,20,23,NaN,23,NaN,23),
+       cex=1,bg="white",inset=0.01)
+
+@
+\caption{Long-run IRATS five factors cumulative abnormal returns of buybacks depending on the CEU-index. From the highest to the lowest lines: solid line is for CEU-index 8, dashed with dots for CEU-index 7, solid with dots for CEU-index 6, solid with diamonds for CEU-index 5, dotted-dashed for CEU-index 4, dashed with diamonds for CEU-index 3, dashed for CEU-index 2, dotted with diamonds for CEU-index 1, and finally the lowest dotted line is for CEU-index 0. The x-axis indicates months from the date of the event announcement.}
+\label{fig:Epastall}
+\end{figure}
+
+
+
+\clearpage
+\bibliographystyle{jf}
+\bibliography{Bibliography}
+\end{document}
+
