@@ -24,6 +24,9 @@ HIGH_EU_THRESHOLD = 5
 
 HOLDING_PERIOD = "Four.Years.After"
 
+windsorize <- function(r) {r0 = r[!is.na(r)]; minval = quantile(r[!is.na(r)],0.01); maxval= quantile(r[!is.na(r)],0.99); r[!is.na(r)] <- ifelse(r[!is.na(r)] < minval | r[!is.na(r)] > maxval, NA, r[!is.na(r)]); r}
+
+
 ###############################################################################################
 source("../FinanceLibraries/lib_helpers.R", chdir=TRUE)
 source("../FinanceLibraries/latex_code.R")
@@ -647,13 +650,17 @@ rm("subset_used","tmp")
 # Get the predicted post-announce abnormal returns (as developed by "../buybackissuers/bb_issuers_new.R")
 load("../FinanceData/created_projects_datasets/BUYBACKSnew_BSC1998_event_study_factor_coeffs.Rdata")
 events_used = paste(BUYBACK_DATA_NETWORK$DATASET$SDC$permno, BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date, sep=" ")
-Estimated_returns = Estimated_returns[events_used,]
+Estimated_returns = 100*Estimated_returns[events_used,]
 BUYBACK_PreEvent_Factor_coeffs = BUYBACK_PreEvent_Factor_coeffs[events_used]
 rm("events_used","BUYBACK_PreEvent_Factor_coeffs") # we don't need for now BUYBACK_PreEvent_Factor_coeffs
 
 company_features_all = cbind(Firm_size,BEME,Prior_R,U_index,EU_index, Vol_raw,One_m_Rsqr,Analyst_coverage,centrality_used,centrality_used)
 colnames(company_features_all) <- c("SizeScore","BEMEScore","PriorReturnsScore","UIndex","EUIndex","Volatility","OneMRsq","AnalystCoverage","CentralityLinear","Centrality")
 nomissing_allowed = c("alphaT","PriorReturnsScore","UIndex","EUIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")
+
+year_dummies_cross = sapply(BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date, function(i) str_sub(i, start=1,end=4))
+company_features_all = as.data.frame(company_features_all)
+company_features_all$year_dummies_cross = year_dummies_cross
 
 ########################################################################################################
 #Table 6: Cross-section Regressions: 
@@ -662,24 +669,25 @@ nomissing_allowed = c("alphaT","PriorReturnsScore","UIndex","EUIndex","Volatilit
 
 useonly = 1:length(BUYBACK_DATA_NETWORK$DATASET$SDC$CUSIP)
 
-BSC1998_individual_regression = Reduce(rbind,lapply(1:length(colnames(company_features_all)), function(i){
+BSC1998_individual_regression = Reduce(rbind,lapply(setdiff(colnames(company_features_all),"year_dummies_cross"), function(i){
+  i = c(i,"year_dummies_cross")
   BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,,drop=F],company_features_all[useonly,i,drop=F], timeperiods_requested = 1:48, square_features = "Centrality",nomissing_allowed)
   BSC1998_completemodel =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
   BSC1998_completemodel[2:nrow(BSC1998_completemodel),]
 }))
-rownames(BSC1998_individual_regression) <- c(colnames(company_features_all),"Centrality.Square")
+rownames(BSC1998_individual_regression) <- c(setdiff(colnames(company_features_all),"year_dummies_cross"),"Centrality.Square")
 BSC1998_individual_regression = rbind(BSC1998_individual_regression, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
 rownames(BSC1998_individual_regression)[nrow(BSC1998_individual_regression)] <- "Observations"
 rownames(BSC1998_individual_regression)[which(rownames(BSC1998_individual_regression) == "Centrality")]<-"Centrality (One regr.)"
 rownames(BSC1998_individual_regression)[which(rownames(BSC1998_individual_regression) == "Centrality.Square")]<-"Centrality.Square (One regr.)"
 
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel = rbind(BSC1998_completemodel, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
 rownames(BSC1998_completemodel)[nrow(BSC1998_completemodel)] <- "Observations"
 
-company_features = company_features_all[,c("SizeScore","BEMEScore","PriorReturnsScore","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("SizeScore","BEMEScore","PriorReturnsScore","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_decompose =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_decompose = rbind(BSC1998_completemodel_decompose, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
@@ -691,14 +699,14 @@ rownames(BSC1998_completemodel_decompose)[nrow(BSC1998_completemodel_decompose)]
 #	Panel B (downgraded vs. other events).
 
 useonly = which(Vol_raw > median(Vol_raw))
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_highvol =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_highvol = rbind(BSC1998_completemodel_highvol, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
 rownames(BSC1998_completemodel_highvol)[nrow(BSC1998_completemodel_highvol)] <- "Observations"
 
 useonly = which(Vol_raw <= median(Vol_raw))
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_lowvol =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_lowvol = rbind(BSC1998_completemodel_lowvol, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
@@ -707,14 +715,14 @@ rownames(BSC1998_completemodel_lowvol)[nrow(BSC1998_completemodel_lowvol)] <- "O
 ###
 
 useonly = which(downgraded_events)
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_downgraded =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_downgraded = rbind(BSC1998_completemodel_downgraded, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
 rownames(BSC1998_completemodel_downgraded)[nrow(BSC1998_completemodel_downgraded)] <- "Observations"
 
 useonly = which(upgraded_events)
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_upgraded =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_upgraded = rbind(BSC1998_completemodel_upgraded, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
@@ -731,14 +739,14 @@ available_analyst_coverage = !is.na(Analyst_coverage)
 Analyst_coverage = scrub(Analyst_coverage)
 
 useonly = (Analyst_coverage < median(Analyst_coverage)) & available_analyst_coverage 
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_highanalyst =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_highanalyst = rbind(BSC1998_completemodel_highanalyst, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
 rownames(BSC1998_completemodel_highanalyst)[nrow(BSC1998_completemodel_highanalyst)] <- "Observations"
 
 useonly = (Analyst_coverage >= median(Analyst_coverage)) & available_analyst_coverage 
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_lowanalyst =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_lowanalyst = rbind(BSC1998_completemodel_lowanalyst, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
@@ -750,14 +758,14 @@ rownames(BSC1998_completemodel_lowanalyst)[nrow(BSC1998_completemodel_lowanalyst
 #	Panel B ??? low EU. 
 
 useonly = (EU_index > 3)
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_highEU =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_highEU = rbind(BSC1998_completemodel_highEU, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
 rownames(BSC1998_completemodel_highEU)[nrow(BSC1998_completemodel_highEU)] <- "Observations"
 
 useonly = (EU_index < 2)
-company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality")]
+company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","Centrality","year_dummies_cross")]
 BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
 BSC1998_completemodel_lowEU =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
 BSC1998_completemodel_lowEU = rbind(BSC1998_completemodel_lowEU, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
@@ -785,8 +793,8 @@ robust_results = list()
 
 useonly = 1:length(BUYBACK_DATA_NETWORK$DATASET$SDC$CUSIP)
 for (iter in 1:ncol(all_centralities)){
-  company_features = cbind(company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage")],all_centralities[,iter])
-  colnames(company_features)[ncol(company_features)] <- "Centrality"
+  company_features = company_features_all[,c("UIndex","Volatility","OneMRsq","AnalystCoverage","year_dummies_cross")]
+  company_features$Centrality = all_centralities[,iter]
   BSC1998_coefficients <- BSC1998_event_study_coeffs(Estimated_returns[useonly,],company_features[useonly,,drop=F],timeperiods_requested = 1:48, square_features = c("Centrality"),nomissing_allowed)
   BSC1998_completemodel_robust =BSC1998_coeffs_tmp_aggregator(BSC1998_coefficients)
   BSC1998_completemodel_robust = rbind(BSC1998_completemodel_robust, c(rep(12,3), rep(24,3),rep(36,3),rep(48,3)))
@@ -796,6 +804,14 @@ for (iter in 1:ncol(all_centralities)){
 names(robust_results) <- colnames(all_centralities)
 
 rm("company_features","useonly","BSC1998_coefficients","iter","BSC1998_completemodel_robust")
+
+# JUST ADD THE MEAN CENTRALITY OF ALL CRSP... used once in the paper...
+load("../FinanceData/created_supplier_customer_networkdata/GLOBAL_SUPPLIER_CUSTOMER_NETWORK_DATABASE.Rdata")
+tmp = GLOBAL_SUPPLIER_CUSTOMER_NETWORK_DATABASE[[centrality_name]]
+tmp = tmp[as.Date(rownames(tmp)) >= min(BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date) & as.Date(rownames(tmp)) <= max(BUYBACK_DATA_NETWORK$DATASET$SDC$Event.Date), ]
+tmp <- get_cross_section_score(tmp)
+meanCRSPdegree = mean(tmp[!is.na(tmp)])
+rm("GLOBAL_SUPPLIER_CUSTOMER_NETWORK_DATABASE","tmp")
 
 ########################################################################################################
 ########################################################################################################
